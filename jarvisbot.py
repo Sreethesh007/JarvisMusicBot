@@ -210,23 +210,23 @@ async def keywords(interaction: discord.Interaction):
     logging.debug(f"/keywords from {interaction.user.name} has ended")
     return
 
-@bot.tree.command(name='counters', description='Shows all of the Word Counters, including their keywords and the amount.')
-async def counters(interaction: discord.Interaction):
-    logging.info(f"{interaction.user.name} has activated /counters")
+# @bot.tree.command(name='counters', description='Shows all of the Word Counters, including their keywords and the amount.')
+# async def counters(interaction: discord.Interaction):
+#     logging.info(f"{interaction.user.name} has activated /counters")
 
-    # check if user is banned
-    bannedUsersClass = BannedUsers()
-    bannedUsers = await bannedUsersClass.loadBannedUserIDs()
-    if interaction.user.id in bannedUsers:
-        await interaction.response.send_message(f"User **{interaction.user.display_name}** is banned from the bot.")
-        return
+#     # check if user is banned
+#     bannedUsersClass = BannedUsers()
+#     bannedUsers = await bannedUsersClass.loadBannedUserIDs()
+#     if interaction.user.id in bannedUsers:
+#         await interaction.response.send_message(f"User **{interaction.user.display_name}** is banned from the bot.")
+#         return
     
-    # grab the countersView Class
-    view = CountersView(bot)
-    # send the discord embed for the queue
-    await view.send_page(interaction, first_response=True)
-    logging.debug(f"/counters from {interaction.user.name} has ended")
-    return
+#     # grab the countersView Class
+#     view = CountersView(bot)
+#     # send the discord embed for the queue
+#     await view.send_page(interaction, first_response=True)
+#     logging.debug(f"/counters from {interaction.user.name} has ended")
+#     return
 
 @bot.tree.command(name='addadmin', description='Admin Only - Adds a user as an admin.')
 async def addAdmin(interaction: discord.Interaction, user: discord.User):

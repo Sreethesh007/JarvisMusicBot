@@ -343,9 +343,9 @@ class MusicController:
             "stop": "handle_stop_keyword"
         }
 
-        keywords = (await WordCounter().loadWordCounters())[0]
-        if any(word in text.lower() for word in keywords):
-            await self.handle_word_counter_keyword(user, text.lower())
+        # keywords = (await WordCounter().loadWordCounters())[0]
+        # if any(word in text.lower() for word in keywords):
+        #     await self.handle_word_counter_keyword(user, text.lower())
 
         botKeywordsClass = BotKeywords()
         botKeywords = await botKeywordsClass.loadBotKeywords()

@@ -12,13 +12,14 @@ class BotKeywords:
         self.bot_keywords_file = root_dir / "bot_keywords.json"
         # Ensure file exists
         if not self.bot_keywords_file.exists():
-            self.bot_keywords_file.write_text(json.dumps(["Jarvis"]))  # start with empty list
+            self.bot_keywords_file.write_text(json.dumps(["jarvis"]))  # start with default keyword
 
     # Load keywords
     async def loadBotKeywords(self):
         async with aiofiles.open(self.bot_keywords_file, "r") as f:
             content = await f.read()
-            return json.loads(content)
+            # Normalize keywords to lowercase to ensure case-insensitive matching
+            return [k.lower() for k in json.loads(content)]
 
     # Save keywords
     async def saveBotKeywords(self, keyword):
@@ -35,6 +36,7 @@ class BotKeywords:
     # Remove keyword if present
     async def removeBotKeyword(self, keyword: str):
         keywords = await self.loadBotKeywords()
-        if keyword in keywords:
-            keywords.remove(keyword)
+        key_lower = keyword.lower()
+        if key_lower in keywords:
+            keywords.remove(key_lower)
             await self.saveBotKeywords(keywords)

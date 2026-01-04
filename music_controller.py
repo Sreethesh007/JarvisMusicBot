@@ -339,9 +339,12 @@ class MusicController:
             "gana rok de": "handle_pause_keyword",
             "gana skip": "handle_skip_keyword",
             "next": "handle_skip_keyword",
+            "disconnect": "handle_disconnect_keyword",
             "loop": "handle_loop_keyword",
-            "stop": "handle_stop_keyword"
+            "stop": "handle_stop_keyword",
         }
+
+        #TODO-            "kick": "handle_kick_keyword",
 
         # keywords = (await WordCounter().loadWordCounters())[0]
         # if any(word in text.lower() for word in keywords):
@@ -458,6 +461,13 @@ class MusicController:
             else:
                 await self.textChannel.send(f"Voice Activated - Looping Disabled")
             return
+
+    async def handle_disconnect_keyword(self, user, text):
+        logging.debug(f"In handle_disconnect_keyword")
+        if self.isConnectedToVC():
+            await self.textChannel.send(f"Voice Activated - Disconnecting from voice channel")
+            await self.hardDisconnect()
+        return
     
     async def handleFile(self, user: discord.User, file: discord.Attachment):
         logging.debug(f"In handleFile")

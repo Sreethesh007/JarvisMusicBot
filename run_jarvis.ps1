@@ -2,9 +2,12 @@ Param(
     [string]$Script = "jarvisbot.py"
 )
 
+$venvCreated = $false
+
 if (-not (Test-Path -Path ".\venv")) {
     Write-Host 'Creating virtual environment...'
     python -m venv venv
+    $venvCreated = $true
 }
 
 $policy = Get-ExecutionPolicy -Scope Process -ErrorAction SilentlyContinue
@@ -24,6 +27,12 @@ if (Test-Path $activatePs) {
     & $activateBat
 } else {
     Write-Host 'Activation script not found; continuing without activation.'
+}
+
+if ($venvCreated) {
+    Write-Host 'Installing dependencies into venv...'
+    & .\venv\Scripts\python.exe -m pip install --upgrade pip
+    & .\venv\Scripts\python.exe -m pip install -r requirements.txt
 }
 
 Write-Host ("Running script: {0}" -f $Script)

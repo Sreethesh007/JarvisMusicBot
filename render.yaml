@@ -4,7 +4,6 @@ services:
     env: docker
     plan: starter
     dockerfilePath: Dockerfile
-    startCommand: python jarvisbot.py
     envVars:
       - key: DISCORD_TOKEN
         sync: false

@@ -566,6 +566,13 @@ async def kick(interaction: discord.Interaction):
         await interaction.response.send_message(f"User **{interaction.user.display_name}** is banned from the bot.")
         return
     
+    # check if user is an admin
+    vipUsersClass = VIPUsers()
+    vipUsers = await vipUsersClass.loadVIPUserIDs()
+    if interaction.user.id not in vipUsers:
+        await interaction.response.send_message(f"Admin only command.")
+        return
+    
     # grab the music controller for designated guild
     musicController = await bot.getGuildMusicController(guild= interaction.guild)
     # call the /dc function

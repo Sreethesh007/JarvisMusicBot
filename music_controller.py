@@ -12,6 +12,7 @@ import logging
 from management.banned_users import BannedUsers
 from management.word_counter import WordCounter
 from management.bot_keywords import BotKeywords
+from management.vip_users import VIPUsers
 from scripts.ytDLP import VideoSearcher, getSongExpiration
 from embed_views.music_buttons import MusicButtons
 from scripts.spotify import SpotifyController
@@ -464,6 +465,14 @@ class MusicController:
 
     async def handle_disconnect_keyword(self, user, text):
         logging.debug(f"In handle_disconnect_keyword")
+        # Only VIP users (including OWNER) can disconnect via voice keyword
+        vipUsersClass = VIPUsers()
+        vipUsers = await vipUsersClass.loadVIPUserIDs()
+        if user.id not in vipUsers:
+            if self.textChannel:
+                await self.textChannel.send(f"Only admins can disconnect the bot.")
+            return
+
         if self.isConnectedToVC():
             await self.textChannel.send(f"Voice Activated - Disconnecting from voice channel")
             await self.hardDisconnect()

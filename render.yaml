@@ -1,0 +1,12 @@
+services:
+  - type: worker
+    name: jarvis-bot
+    env: docker
+    plan: starter
+    dockerfilePath: Dockerfile
+    startCommand: python jarvisbot.py
+    envVars:
+      - key: DISCORD_TOKEN
+        sync: false
+      - key: OWNER
+        sync: false

@@ -343,6 +343,7 @@ class MusicController:
             "disconnect": "handle_disconnect_keyword",
             "loop": "handle_loop_keyword",
             "stop": "handle_stop_keyword",
+            "top": "handle_stop_keyword",
         }
 
         #TODO-            "kick": "handle_kick_keyword",

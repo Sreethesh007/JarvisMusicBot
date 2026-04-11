@@ -9,6 +9,7 @@ from discord.ext import commands, voice_recv
 from typing import Optional, Tuple
 import speech_recognition as sr
 import logging
+import gtts
 from management.banned_users import BannedUsers
 from management.word_counter import WordCounter
 from management.bot_keywords import BotKeywords
@@ -44,6 +45,13 @@ class MusicController:
         self.start_time = None
         self.pause_start = None
         self.pause_duration = 0
+        self.isPlayingTTS = False
+
+    async def generate_tts(self, text: str, filename: str = "tts.mp3"):
+        def _generate():
+            tts = gtts.gTTS(text=text, lang='en', slow=False)
+            tts.save(filename)
+        await asyncio.to_thread(_generate)
 
     # function to check if the bot is currently connected to a voice channel
     def isConnectedToVC(self):
@@ -146,6 +154,7 @@ class MusicController:
         if self.isConnectedToVC():
             voice_client = discord.utils.get(self.client.voice_clients, guild=self.guild)
             if not self.isMajorityVote:
+                self.isPlayingTTS = False
                 voice_client.stop_playing()
                 return
             
@@ -179,6 +188,7 @@ class MusicController:
 
                     if vote_counts["✅"] >= required_votes:
                         await self.textChannel.send("Majority vote reached. Skipping song.")
+                        self.isPlayingTTS = False
                         voice_client.stop_playing()
                         return
                     elif vote_counts["❌"] >= required_votes:
@@ -224,6 +234,7 @@ class MusicController:
             if not self.isMajorityVote:
                 self.songQueue = []
                 self.isLooping = False
+                self.isPlayingTTS = False
                 voice_client.stop_playing()
                 return
             
@@ -257,6 +268,7 @@ class MusicController:
 
                     if vote_counts["✅"] >= required_votes:
                         await self.textChannel.send("Majority vote reached. Stopping song and clearing queue.")
+                        self.isPlayingTTS = False
                         voice_client.stop_playing()
                         return
                     elif vote_counts["❌"] >= required_votes:
@@ -321,7 +333,7 @@ class MusicController:
         
         voice_client = discord.utils.get(self.client.voice_clients, guild=self.guild)
         try:
-            voice_client.listen(voice_recv.extras.speechrecognition.SpeechRecognitionSink(process_cb=process_wit, default_recognizer="google"))
+            voice_client.listen(voice_recv.extras.speechrecognition.SpeechRecognitionSink(process_cb=process_wit, default_recognizer="google", phrase_time_limit=3))
         except Exception as e:
             logging.exception(e)
 
@@ -334,6 +346,9 @@ class MusicController:
         if not text.strip():
             logging.debug(f"text is empty. Doing nothing")
             return
+
+        # Clean up punctuation from the transcribed text
+        text = re.sub(r'[^\w\s]', '', text)
         
         commands = {
             "play": "handle_play_keyword",
@@ -344,6 +359,9 @@ class MusicController:
             "loop": "handle_loop_keyword",
             "stop": "handle_stop_keyword",
             "top": "handle_stop_keyword",
+            "resume": "handle_pause_keyword",
+            "pause": "handle_pause_keyword",
+            "skip": "handle_skip_keyword",
         }
 
         #TODO-            "kick": "handle_kick_keyword",
@@ -816,14 +834,44 @@ class MusicController:
                 fut = asyncio.run_coroutine_threadsafe(self.playSong(), self.client.loop)
                 fut.add_done_callback(lambda f: f.exception())
 
-        # get the voice client and play the song
-        voice_client = discord.utils.get(self.client.voice_clients, guild=self.guild)
-        voice_client.play(player, after=after_playing)
+        def after_tts(error):
+            if error:
+                logging.error(f"Error during TTS playback: {error}")
 
-        # start the duration timer
-        self.start_time = int(time.time())
-        self.pause_duration = 0
-        self.pause_start = None
+            if not self.isPlayingTTS: # if aborted
+                return
+            self.isPlayingTTS = False
+
+            # Start actual song
+            self.start_time = int(time.time())
+            self.pause_duration = 0
+            self.pause_start = None
+
+            def play_actual_song():
+                if self.isConnectedToVC():
+                    voice_client = discord.utils.get(self.client.voice_clients, guild=self.guild)
+                    if voice_client.is_connected():
+                        voice_client.play(player, after=after_playing)
+
+            self.client.loop.call_soon_threadsafe(play_actual_song)
+
+
+        # generate and play TTS first
+        voice_client = discord.utils.get(self.client.voice_clients, guild=self.guild)
+        try:
+            tts_filename = f"tts_{self.guild.id}.mp3"
+            await self.generate_tts(f"Playing {song.title}", tts_filename)
+            tts_player = discord.FFmpegPCMAudio(tts_filename)
+            self.isPlayingTTS = True
+            voice_client.play(tts_player, after=after_tts)
+        except Exception as e:
+            logging.error(f"Failed to play TTS: {e}")
+            # fallback to direct play
+            self.start_time = int(time.time())
+            self.pause_duration = 0
+            self.pause_start = None
+            voice_client.play(player, after=after_playing)
+
 
         # send the "Now Playing" discord embed
         embed = discord.Embed(

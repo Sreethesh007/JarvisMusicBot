@@ -333,7 +333,7 @@ class MusicController:
         
         voice_client = discord.utils.get(self.client.voice_clients, guild=self.guild)
         try:
-            voice_client.listen(voice_recv.extras.speechrecognition.SpeechRecognitionSink(process_cb=process_wit, default_recognizer="google", phrase_time_limit=3))
+            voice_client.listen(voice_recv.extras.speechrecognition.SpeechRecognitionSink(process_cb=process_wit, default_recognizer="google"))
         except Exception as e:
             logging.exception(e)
 

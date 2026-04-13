@@ -9,7 +9,7 @@ from discord.ext import commands, voice_recv
 from typing import Optional, Tuple
 import speech_recognition as sr
 import logging
-import gtts
+import edge_tts
 from management.banned_users import BannedUsers
 from management.word_counter import WordCounter
 from management.bot_keywords import BotKeywords
@@ -48,10 +48,8 @@ class MusicController:
         self.isPlayingTTS = False
 
     async def generate_tts(self, text: str, filename: str = "tts.mp3"):
-        def _generate():
-            tts = gtts.gTTS(text=text, lang='en', slow=False)
-            tts.save(filename)
-        await asyncio.to_thread(_generate)
+        communicate = edge_tts.Communicate(text, "en-US-BrianNeural")
+        await communicate.save(filename)
 
     # function to check if the bot is currently connected to a voice channel
     def isConnectedToVC(self):

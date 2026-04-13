@@ -46,6 +46,21 @@ class MusicController:
         self.pause_start = None
         self.pause_duration = 0
         self.isPlayingTTS = False
+        self.cached_bot_keywords = None
+        self.bot_keywords_last_mtime = 0
+
+    async def _get_bot_keywords(self):
+        botKeywordsClass = BotKeywords()
+        try:
+            current_mtime = botKeywordsClass.bot_keywords_file.stat().st_mtime
+        except OSError:
+            current_mtime = 0
+
+        if self.cached_bot_keywords is None or self.bot_keywords_last_mtime != current_mtime:
+            self.cached_bot_keywords = await botKeywordsClass.loadBotKeywords()
+            self.bot_keywords_last_mtime = current_mtime
+
+        return self.cached_bot_keywords
 
     async def generate_tts(self, text: str, filename: str = "tts.mp3"):
         communicate = edge_tts.Communicate(text, "en-US-BrianNeural")
@@ -368,8 +383,7 @@ class MusicController:
         # if any(word in text.lower() for word in keywords):
         #     await self.handle_word_counter_keyword(user, text.lower())
 
-        botKeywordsClass = BotKeywords()
-        botKeywords = await botKeywordsClass.loadBotKeywords()
+        botKeywords = await self._get_bot_keywords()
 
         if not any(word in text.lower() for word in botKeywords):
             return
@@ -431,8 +445,7 @@ class MusicController:
 
     async def handle_play_keyword(self, user, text):
         logging.debug(f"In handle_play_keyword")
-        botKeywordsClass = BotKeywords()
-        botKeywords = await botKeywordsClass.loadBotKeywords()
+        botKeywords = await self._get_bot_keywords()
         match = re.search(r"(?:{})\s+play\s+(.*)".format("|".join(re.escape(k) for k in botKeywords)), text, re.IGNORECASE)
         if not match:
             logging.debug("No query found after 'keyword play', assume user wants to resume")

@@ -13,7 +13,6 @@ from management.vip_users import VIPUsers
 from embed_views.queue_view import QueueView
 from embed_views.search_view import SearchView
 from embed_views.keywords_view import KeywordsView
-from embed_views.counters_view import CountersView
 
 # set up logging
 logging.basicConfig(

@@ -274,7 +274,8 @@ async def play(interaction: discord.Interaction, query: str):
             await musicController.two_four_seven(interaction.user.voice.channel, interaction.channel)
 
     # send initial response
-    await interaction.response.send_message(f"Searching For Song...", delete_after= 5)
+    await interaction.response.defer(thinking=True)
+    await interaction.followup.send(f"Searching For Song...")
 
     # send the query to determine where the song comes from
     await musicController.determineSongSource(interaction.user, query)
@@ -305,7 +306,8 @@ async def playfile(interaction: discord.Interaction, file: discord.Attachment):
             await musicController.two_four_seven(interaction.user.voice.channel, interaction.channel)
 
     # send initial response
-    await interaction.response.send_message(f"Downloading Audio File: {file.filename}", delete_after= 3)
+    await interaction.response.defer(thinking=True)
+    await interaction.followup.send(f"Downloading Audio File: {file.filename}")
 
     # send the attachment to the music controller
     await musicController.handleFile(interaction.user, file)
@@ -324,14 +326,16 @@ async def two_four_seven(interaction: discord.Interaction, channel: discord.Voic
         await interaction.response.send_message(f"User **{interaction.user.display_name}** is banned from the bot.")
         return
 
+    await interaction.response.defer(thinking=True)
+
     # grab the music controller for designated guild
     musicController = await bot.getGuildMusicController(guild= interaction.guild)
     # activate the /247 function
     response = await musicController.two_four_seven(channel, interaction.channel)
     if response:
-        await interaction.response.send_message(f"Bot is currently in {response.channel.name}")
+        await interaction.followup.send(f"Bot is currently in {response.channel.name}")
     else:
-        await interaction.response.send_message(f"Enabling 24/7 Mode in {channel.name}")
+        await interaction.followup.send(f"Enabling 24/7 Mode in {channel.name}")
     logging.debug(f"/247 from {interaction.user.name} has ended")
     return
 
@@ -358,7 +362,8 @@ async def lofi(interaction: discord.Interaction):
             await musicController.two_four_seven(interaction.user.voice.channel, interaction.channel)
 
     # send initial response
-    await interaction.response.send_message(f"Searching For Song...", delete_after= 5)
+    await interaction.response.defer(thinking=True)
+    await interaction.followup.send(f"Searching For Song...")
 
     # stream link
     url = "https://www.youtube.com/watch?v=jfKfPfyJRdk"
@@ -392,7 +397,8 @@ async def lofijazz(interaction: discord.Interaction):
             await musicController.two_four_seven(interaction.user.voice.channel, interaction.channel)
 
     # send initial response
-    await interaction.response.send_message(f"Searching For Song...", delete_after= 5)
+    await interaction.response.defer(thinking=True)
+    await interaction.followup.send(f"Searching For Song...")
 
     # stream link
     url = "https://www.youtube.com/watch?v=HuFYqnbVbzY"
@@ -426,7 +432,8 @@ async def synthwave(interaction: discord.Interaction):
             await musicController.two_four_seven(interaction.user.voice.channel, interaction.channel)
 
     # send initial response
-    await interaction.response.send_message(f"Searching For Song...", delete_after= 5)
+    await interaction.response.defer(thinking=True)
+    await interaction.followup.send(f"Searching For Song...")
 
     # stream link
     url = "https://www.youtube.com/watch?v=4xDzrJKXOOY"
@@ -659,7 +666,8 @@ async def search(interaction: discord.Interaction, query: str):
         return
     
     # send the initial discord message
-    await interaction.response.send_message(f"Searching Youtube: {query}", delete_after=3)
+    await interaction.response.defer(thinking=True)
+    await interaction.followup.send(f"Searching Youtube: {query}")
     # grab the music controller for designated guild
     musicController = await bot.getGuildMusicController(guild= interaction.guild)
     # search for the query

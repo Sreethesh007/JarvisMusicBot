@@ -326,7 +326,9 @@ class MusicController:
         else:
             voice_client = discord.utils.get(self.client.voice_clients, guild=self.guild)
             logging.debug(f"Bot is already in channel: {voice_client.channel.name}")
-            await self.startVoiceRecording()
+            # If already listening, do not start again to prevent websocket loop 4006
+            if not getattr(voice_client, 'is_listening', lambda: False)():
+                await self.startVoiceRecording()
             return voice_client    
         
     # function to start the voice listening
@@ -346,7 +348,12 @@ class MusicController:
             return text
         
         voice_client = discord.utils.get(self.client.voice_clients, guild=self.guild)
+        if not voice_client:
+            return
+
         try:
+            if getattr(voice_client, 'is_listening', lambda: False)():
+                voice_client.stop_listening()
             voice_client.listen(voice_recv.extras.speechrecognition.SpeechRecognitionSink(process_cb=process_wit, default_recognizer="google"))
         except Exception as e:
             logging.exception(e)

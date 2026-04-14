@@ -16,6 +16,7 @@ from management.vip_users import VIPUsers
 from scripts.ytDLP import VideoSearcher, getSongExpiration
 from embed_views.music_buttons import MusicButtons
 from scripts.spotify import SpotifyController
+from management.nlp_processor import NLPProcessor
 
 class Song:
     def __init__(self, title: str, url: str, link: str, thumbnail: str, duration: int, user: discord.User, isFile: bool):
@@ -47,6 +48,7 @@ class MusicController:
         self.isPlayingTTS = False
         self.cached_bot_keywords = None
         self.bot_keywords_last_mtime = 0
+        self.nlp_processor = NLPProcessor()
 
     async def _get_bot_keywords(self):
         botKeywordsClass = BotKeywords()
@@ -362,43 +364,19 @@ class MusicController:
         # Clean up punctuation from the transcribed text
         text = re.sub(r'[^\w\s]', '', text)
         
-        commands = {
-            "play": "handle_play_keyword",
-            "gana rok de": "handle_pause_keyword",
-            "gana skip": "handle_skip_keyword",
-            "next": "handle_skip_keyword",
-            "disconnect": "handle_disconnect_keyword",
-            "loop": "handle_loop_keyword",
-            "stop": "handle_stop_keyword",
-            "top": "handle_stop_keyword",
-            "resume": "handle_pause_keyword",
-            "pause": "handle_pause_keyword",
-            "skip": "handle_skip_keyword",
-        }
-
-        #TODO-            "kick": "handle_kick_keyword",
-
         botKeywords = await self._get_bot_keywords()
 
+        # Check if the bot was mentioned
         if not any(word in text.lower() for word in botKeywords):
             return
 
-        # capture the remainder after the bot name so multi-word commands like "rok de" work
+        # capture the remainder after the bot name
         match = re.search(r"(?:{})\s+(.+)".format("|".join(re.escape(k) for k in botKeywords)), text, re.IGNORECASE)
         if not match:
             logging.debug("No command keyword found after bot name")
             return
 
-        raw_keyword = match.group(1).lower().strip()
-        # prefer exact multi-word matches (e.g. "rok de"), else fall back to the first word
-        if raw_keyword in commands:
-            keyword = raw_keyword
-        else:
-            keyword = raw_keyword.split()[0]
-
-        if keyword not in commands:
-            logging.debug(f"'{keyword}' is not a valid command keyword")
-            return
+        raw_command = match.group(1).lower().strip()
 
         bannedUsersClass = BannedUsers()
         bannedUsers = await bannedUsersClass.loadBannedUserIDs()
@@ -406,77 +384,79 @@ class MusicController:
             await self.textChannel.send(f"User **{user.display_name}** is banned from the bot.")
             return
 
-        method_name = commands[keyword]
-        handler = getattr(self, method_name, None)
-        if handler:
-            await handler(user, text)
-        return
+        intent, query = await self.nlp_processor.determine_intent(raw_command)
 
+        logging.info(f"NLP determined intent: {intent}, query: {query}")
 
-    async def handle_play_keyword(self, user, text):
-        logging.debug(f"In handle_play_keyword")
-        botKeywords = await self._get_bot_keywords()
-        match = re.search(r"(?:{})\s+play\s+(.*)".format("|".join(re.escape(k) for k in botKeywords)), text, re.IGNORECASE)
-        if not match:
-            logging.debug("No query found after 'keyword play', assume user wants to resume")
-            await self.textChannel.send(f"Voice Activated - Resuming Song")
-            await self.resumeSong()
-            return
-        query = match.group(1).strip()
-        await self.textChannel.send(f"Voice Activated - Searching for song: {query}")
-        await self.handleYoutubeSearch(user, query)
-        return
-    
-    async def handle_pause_keyword(self, user, text):
-        logging.debug(f"In handle_pause_keyword")
-        if self.isConnectedToVC():
-            voice_client = discord.utils.get(self.client.voice_clients, guild=self.guild)
-            if not voice_client.is_paused():
-                await self.textChannel.send(f"Voice Activated - Pausing Song")
-            else:
+        if intent == 'play':
+            if not query:
+                # If no query is found, assume they meant to just resume
                 await self.textChannel.send(f"Voice Activated - Resuming Song")
-            await self.pauseSong()
-            return
-    
-    async def handle_skip_keyword(self, user, text):
-        logging.debug(f"In handle_skip_keyword")
-        if self.isConnectedToVC():
-            if not self.isMajorityVote:
-                await self.textChannel.send(f"Voice Activated - Skipping Song")
-            await self.skipSong()
-            return
-        
-    async def handle_stop_keyword(self, user, text):
-        logging.debug(f"In handle_stop_keyword")
-        if self.isConnectedToVC():
-            if not self.isMajorityVote:
-                await self.textChannel.send(f"Voice Activated - Stopping Song and clearing queue")
-            await self.stopAllSongs()
-            return
-        
-    async def handle_loop_keyword(self, user, text):
-        logging.debug(f"In handle_loop_keyword")
-        if self.isConnectedToVC():
-            if await self.setLooping():
-                await self.textChannel.send(f"Voice Activated - Looping Enabled")
+                await self.resumeSong()
             else:
-                await self.textChannel.send(f"Voice Activated - Looping Disabled")
-            return
+                await self.textChannel.send(f"Voice Activated - Searching for song: {query}")
+                await self.handleYoutubeSearch(user, query)
+        elif intent == 'pause':
+            if self.isConnectedToVC():
+                voice_client = discord.utils.get(self.client.voice_clients, guild=self.guild)
+                if voice_client and not voice_client.is_paused():
+                    await self.textChannel.send(f"Voice Activated - Pausing Song")
+                else:
+                    await self.textChannel.send(f"Voice Activated - Resuming Song")
+                await self.pauseSong()
+        elif intent == 'resume':
+            if self.isConnectedToVC():
+                await self.textChannel.send(f"Voice Activated - Resuming Song")
+                await self.resumeSong()
+        elif intent == 'skip':
+            if self.isConnectedToVC():
+                if not self.isMajorityVote:
+                    await self.textChannel.send(f"Voice Activated - Skipping Song")
+                await self.skipSong()
+        elif intent == 'stop':
+            if self.isConnectedToVC():
+                if not self.isMajorityVote:
+                    await self.textChannel.send(f"Voice Activated - Stopping Song and clearing queue")
+                await self.stopAllSongs()
+        elif intent == 'loop':
+            if self.isConnectedToVC():
+                if await self.setLooping():
+                    await self.textChannel.send(f"Voice Activated - Looping Enabled")
+                else:
+                    await self.textChannel.send(f"Voice Activated - Looping Disabled")
+        elif intent == 'disconnect':
+            # Only VIP users (including OWNER) can disconnect via voice keyword
+            vipUsersClass = VIPUsers()
+            vipUsers = await vipUsersClass.loadVIPUserIDs()
+            if user.id not in vipUsers:
+                if self.textChannel:
+                    await self.textChannel.send(f"Only admins can disconnect the bot.")
+                return
 
-    async def handle_disconnect_keyword(self, user, text):
-        logging.debug(f"In handle_disconnect_keyword")
-        # Only VIP users (including OWNER) can disconnect via voice keyword
-        vipUsersClass = VIPUsers()
-        vipUsers = await vipUsersClass.loadVIPUserIDs()
-        if user.id not in vipUsers:
-            if self.textChannel:
-                await self.textChannel.send(f"Only admins can disconnect the bot.")
-            return
+            if self.isConnectedToVC():
+                await self.textChannel.send(f"Voice Activated - Disconnecting from voice channel")
+                await self.hardDisconnect()
+        else:
+            await self.textChannel.send("Sorry, I don't understand.")
+            # optionally add TTS to say sorry
+            voice_client = discord.utils.get(self.client.voice_clients, guild=self.guild)
+            if voice_client and not voice_client.is_playing() and not voice_client.is_paused():
+                try:
+                    tts_filename = f"tts_error_{self.guild.id}.mp3"
+                    await self.generate_tts("Sorry, I don't understand.", tts_filename)
+                    tts_player = discord.FFmpegPCMAudio(tts_filename)
 
-        if self.isConnectedToVC():
-            await self.textChannel.send(f"Voice Activated - Disconnecting from voice channel")
-            await self.hardDisconnect()
+                    def after_tts(error):
+                        if error:
+                            logging.error(f"Error during TTS playback: {error}")
+
+                    voice_client.play(tts_player, after=after_tts)
+                except Exception as e:
+                    logging.error(f"Failed to play error TTS: {e}")
+
         return
+
+
     
     async def handleFile(self, user: discord.User, file: discord.Attachment):
         logging.debug(f"In handleFile")

@@ -29,3 +29,4 @@ yt-dlp
 yt-dlp-ejs
 standard-aifc
 edge-tts
+google-generativeai

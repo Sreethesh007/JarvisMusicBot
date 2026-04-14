@@ -11,7 +11,6 @@ import speech_recognition as sr
 import logging
 import edge_tts
 from management.banned_users import BannedUsers
-from management.word_counter import WordCounter
 from management.bot_keywords import BotKeywords
 from management.vip_users import VIPUsers
 from scripts.ytDLP import VideoSearcher, getSongExpiration
@@ -379,10 +378,6 @@ class MusicController:
 
         #TODO-            "kick": "handle_kick_keyword",
 
-        # keywords = (await WordCounter().loadWordCounters())[0]
-        # if any(word in text.lower() for word in keywords):
-        #     await self.handle_word_counter_keyword(user, text.lower())
-
         botKeywords = await self._get_bot_keywords()
 
         if not any(word in text.lower() for word in botKeywords):
@@ -415,31 +410,6 @@ class MusicController:
         handler = getattr(self, method_name, None)
         if handler:
             await handler(user, text)
-        return
-
-    async def handle_word_counter_keyword(self, user, text):
-        logging.debug(f"in handle_word_counter_keyword")
-        wordCounterClass = WordCounter()
-        mapping = (await wordCounterClass.loadWordCounters())[0]
-
-        counter_hits = {}
-
-        for keyword, counter_name in mapping.items():
-            count = text.count(keyword)
-            if count > 0:
-                counter_hits[counter_name] = counter_hits.get(counter_name, 0) + count
-                for _ in range(count):
-                    await wordCounterClass.incrementCounterForKeyword(keyword)
-                    new_count = await wordCounterClass.getCount(counter_name)
-                    embed = discord.Embed(
-                        title=f"{counter_name.capitalize()} Counter:",
-                        description=f"{new_count} - {user.display_name}",
-                        color=0xa600ff,
-                    )
-                    embed.set_thumbnail(url=self.client.user.avatar.url)
-                    await self.textChannel.send(embed=embed)
-
-        logging.info(f"{user.display_name} triggered updates for: {counter_hits}")
         return
 
 

@@ -35,6 +35,10 @@ class JarvisBot(discord.Client):
         self.tree = app_commands.CommandTree(self)
 
         # Load environment variables
+# In order to use Google Gemini AI for natural language command parsing,
+# set the following variables in your local .env file:
+# USE_AI_INTENT=True
+# GEMINI_API_KEY=your_gemini_api_key_here
         load_dotenv()
         self.token = os.getenv('DISCORD_TOKEN')
 

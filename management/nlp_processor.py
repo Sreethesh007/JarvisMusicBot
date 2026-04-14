@@ -60,7 +60,7 @@ User command: "{text}"
         """
         try:
             response = await self.client.aio.models.generate_content(
-                model='gemini-2.5-flash',
+                model='gemma-3-1b-it',
                 contents=prompt
             )
             # Remove any markdown formatting if present

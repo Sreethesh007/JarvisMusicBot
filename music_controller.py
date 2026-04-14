@@ -64,7 +64,7 @@ class MusicController:
         return self.cached_bot_keywords
 
     async def generate_tts(self, text: str, filename: str = "tts.mp3"):
-        communicate = edge_tts.Communicate(text, "en-US-BrianNeural")
+        communicate = edge_tts.Communicate(text, "en-IN-PrabhatNeural")
         await communicate.save(filename)
 
     # function to check if the bot is currently connected to a voice channel

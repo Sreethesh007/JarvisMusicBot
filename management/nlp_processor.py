@@ -2,7 +2,7 @@ import os
 import re
 import json
 import logging
-import google.generativeai as genai
+from google import genai
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -13,9 +13,7 @@ class NLPProcessor:
         self.api_key = os.getenv("GEMINI_API_KEY", "")
 
         if self.use_ai and self.api_key:
-            genai.configure(api_key=self.api_key)
-            # Use gemini-pro as it's the standard model for text processing
-            self.model = genai.GenerativeModel('gemini-pro')
+            self.client = genai.Client(api_key=self.api_key)
             logging.info("NLP Processor initialized with Gemini AI enabled.")
         else:
             if self.use_ai and not self.api_key:
@@ -61,7 +59,10 @@ Do not include markdown blocks or any other text, just the raw JSON.
 User command: "{text}"
         """
         try:
-            response = await self.model.generate_content_async(prompt)
+            response = await self.client.aio.models.generate_content(
+                model='gemini-2.5-flash',
+                contents=prompt
+            )
             # Remove any markdown formatting if present
             raw_json = re.sub(r'```json\n|\n```|```', '', response.text).strip()
             result = json.loads(raw_json)

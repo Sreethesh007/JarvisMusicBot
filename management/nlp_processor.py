@@ -41,14 +41,14 @@ class NLPProcessor:
 You are a music bot intent classifier.
 The user will provide a command in English or Hindi (or Hinglish).
 Your job is to classify the command into one of the following intents:
-- 'play' (to play a song, also extract the song name)
+- 'play' (to play a song, also extract the song name). IMPORTANT: Only classify as 'play' if the user explicitly asks to play something (e.g., using words like "play", "baja", "chala"). A sentence just saying a word or name (e.g. "Jarvis watermelon") with no intent to play must NOT be classified as 'play'.
 - 'pause' (to pause the music)
 - 'resume' (to resume paused music)
 - 'skip' (to skip to the next song)
 - 'stop' (to stop the music and clear the queue)
 - 'loop' (to loop the current song)
 - 'disconnect' (to disconnect the bot from voice)
-- 'unknown' (if the command is not related to music controls)
+- 'unknown' (if the command is not related to music controls or lacks a clear intent)
 
 Return the result as a strict JSON object with exactly two keys:
 1. "intent": string (one of the intents above)

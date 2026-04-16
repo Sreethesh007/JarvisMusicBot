@@ -4,7 +4,7 @@ import os
 import asyncio
 import logging
 from pathlib import Path
-from discord import app_commands
+
 from dotenv import load_dotenv
 from typing import Optional
 from music_controller import MusicController
@@ -27,12 +27,12 @@ logging.basicConfig(
 # block discords logging
 logging.getLogger("discord").setLevel(logging.WARNING)
 
-class JarvisBot(discord.Client):
+class JarvisBot(discord.Bot):
     def __init__(self):
         intents = discord.Intents.default()
         intents.message_content = True
         super().__init__(intents=intents)
-        self.tree = app_commands.CommandTree(self)
+        pass
 
         # Load environment variables
 # In order to use Google Gemini AI for natural language command parsing,
@@ -60,7 +60,7 @@ class JarvisBot(discord.Client):
 
     async def on_ready(self):
         logging.info(f"{self.user} is now running.")
-        await bot.tree.sync()
+        pass
         logging.info("commands synced")
 
     async def on_connect(self):
@@ -109,59 +109,59 @@ async def on_voice_state_update(member, before, after):
             await musicController.two_four_seven(voiceChannel, textChannel)
 
 
-@bot.tree.command(name='transcribe', description='Prints the voice chat. If no channel is selected, turns it off.')
-async def transcribe(interaction: discord.Interaction, channel: Optional[discord.TextChannel] = None):
-    logging.info(f"{interaction.user.name} has activated /transcribe")
+@bot.slash_command(name='transcribe', description='Prints the voice chat. If no channel is selected, turns it off.')
+async def transcribe(ctx: discord.ApplicationContext, channel: Optional[discord.TextChannel] = None):
+    logging.info(f"{ctx.author.name} has activated /transcribe")
 
     # check if user is banned
     bannedUsersClass = BannedUsers()
     bannedUsers = await bannedUsersClass.loadBannedUserIDs()
-    if interaction.user.id in bannedUsers:
-        await interaction.response.send_message(f"User **{interaction.user.display_name}** is banned from the bot.")
+    if ctx.author.id in bannedUsers:
+        await ctx.respond(f"User **{ctx.author.display_name}** is banned from the bot.")
         return
     
     # grab the music controller for designated guild
-    musicController = await bot.getGuildMusicController(guild= interaction.guild)
+    musicController = await bot.getGuildMusicController(guild= ctx.guild)
     # call the /transcribe function
     response = await musicController.setTranscriptionChannel(channel)
     if response:
-        await interaction.response.send_message(f"Transcription Enabled in {response.name}.")
+        await ctx.respond(f"Transcription Enabled in {response.name}.")
     else:
-        await interaction.response.send_message(f"Transcription Disabled.")
-    logging.debug(f"/transcribe from {interaction.user.name} has ended")
+        await ctx.respond(f"Transcription Disabled.")
+    logging.debug(f"/transcribe from {ctx.author.name} has ended")
     return
 
-@bot.tree.command(name='majorvote', description='Admin Only - Enables/Disables Majority Vote on Skipping or Stopping a Song.')
-async def majorVote(interaction: discord.Interaction):
-    logging.info(f"{interaction.user.name} has activated /majorvote")
+@bot.slash_command(name='majorvote', description='Admin Only - Enables/Disables Majority Vote on Skipping or Stopping a Song.')
+async def majorVote(ctx: discord.ApplicationContext):
+    logging.info(f"{ctx.author.name} has activated /majorvote")
 
     # check if user is an admin
     vipUsersClass = VIPUsers()
     vipUsers = await vipUsersClass.loadVIPUserIDs()
-    if interaction.user.id not in vipUsers:
-        await interaction.response.send_message(f"Admin only command.")
+    if ctx.author.id not in vipUsers:
+        await ctx.respond(f"Admin only command.")
         return
     
     # grab the music controller for designated guild
-    musicController = await bot.getGuildMusicController(guild= interaction.guild)
+    musicController = await bot.getGuildMusicController(guild= ctx.guild)
     # call the /majorvote function
     response = await musicController.setMajorityVote()
     if response:
-        await interaction.response.send_message(f"Majority Vote Enabled.")
+        await ctx.respond(f"Majority Vote Enabled.")
     else:
-        await interaction.response.send_message(f"Majority Vote Disabled.")
-    logging.debug(f"/majorvote from {interaction.user.name} has ended")
+        await ctx.respond(f"Majority Vote Disabled.")
+    logging.debug(f"/majorvote from {ctx.author.name} has ended")
     return
 
-@bot.tree.command(name='ban', description='Admin Only - Ban a user from the bot.')
-async def ban(interaction: discord.Interaction, user: discord.User):
-    logging.info(f"{interaction.user.name} has activated /ban")
+@bot.slash_command(name='ban', description='Admin Only - Ban a user from the bot.')
+async def ban(ctx: discord.ApplicationContext, user: discord.User):
+    logging.info(f"{ctx.author.name} has activated /ban")
 
     # check if user is an admin
     vipUsersClass = VIPUsers()
     vipUsers = await vipUsersClass.loadVIPUserIDs()
-    if interaction.user.id not in vipUsers:
-        await interaction.response.send_message(f"Admin only command.")
+    if ctx.author.id not in vipUsers:
+        await ctx.respond(f"Admin only command.")
         return
     
     logging.info(f"user to ban: {user.display_name} {user.id}")
@@ -169,20 +169,20 @@ async def ban(interaction: discord.Interaction, user: discord.User):
     bannedUsers = BannedUsers()
     # add to banned users
     await bannedUsers.addBannedUserID(user.id)
-    await interaction.response.send_message(f"{user.display_name} has been banned.")
+    await ctx.respond(f"{user.display_name} has been banned.")
     logging.info(f"{user.display_name} has been banned")
-    logging.debug(f"/ban from {interaction.user.name} has ended")
+    logging.debug(f"/ban from {ctx.author.name} has ended")
     return
 
-@bot.tree.command(name='unban', description='Admin Only - UnBans a user from the bot.')
-async def unban(interaction: discord.Interaction, user: discord.User):
-    logging.info(f"{interaction.user.name} has activated /unban")
+@bot.slash_command(name='unban', description='Admin Only - UnBans a user from the bot.')
+async def unban(ctx: discord.ApplicationContext, user: discord.User):
+    logging.info(f"{ctx.author.name} has activated /unban")
 
     # check if user is an admin
     vipUsersClass = VIPUsers()
     vipUsers = await vipUsersClass.loadVIPUserIDs()
-    if interaction.user.id not in vipUsers:
-        await interaction.response.send_message(f"Admin only command.")
+    if ctx.author.id not in vipUsers:
+        await ctx.respond(f"Admin only command.")
         return
     
     logging.info(f"user to un-ban: {user.display_name} {user.id}")
@@ -190,450 +190,450 @@ async def unban(interaction: discord.Interaction, user: discord.User):
     bannedUsers = BannedUsers()
     # remove banned user
     await bannedUsers.removeBannedUserID(user.id)
-    await interaction.response.send_message(f"{user.display_name} has been un-banned.")
+    await ctx.respond(f"{user.display_name} has been un-banned.")
     logging.info(f"{user.display_name} has been un-banned")
-    logging.debug(f"/unban from {interaction.user.name} has ended")
+    logging.debug(f"/unban from {ctx.author.name} has ended")
     return
 
-@bot.tree.command(name='keywords', description='Shows the available keywords to start voice commands.')
-async def keywords(interaction: discord.Interaction):
-    logging.info(f"{interaction.user.name} has activated /keywords")
+@bot.slash_command(name='keywords', description='Shows the available keywords to start voice commands.')
+async def keywords(ctx: discord.ApplicationContext):
+    logging.info(f"{ctx.author.name} has activated /keywords")
 
     # check if user is banned
     bannedUsersClass = BannedUsers()
     bannedUsers = await bannedUsersClass.loadBannedUserIDs()
-    if interaction.user.id in bannedUsers:
-        await interaction.response.send_message(f"User **{interaction.user.display_name}** is banned from the bot.")
+    if ctx.author.id in bannedUsers:
+        await ctx.respond(f"User **{ctx.author.display_name}** is banned from the bot.")
         return
     
     # grab the keywordsView Class
     view = KeywordsView(bot)
     # send the discord embed for the queue
-    await view.send_page(interaction, first_response=True)
-    logging.debug(f"/keywords from {interaction.user.name} has ended")
+    await view.send_page(ctx.interaction, first_response=True)
+    logging.debug(f"/keywords from {ctx.author.name} has ended")
     return
 
-@bot.tree.command(name='addadmin', description='Admin Only - Adds a user as an admin.')
-async def addAdmin(interaction: discord.Interaction, user: discord.User):
-    logging.info(f"{interaction.user.name} has activated /addAdmin")
+@bot.slash_command(name='addadmin', description='Admin Only - Adds a user as an admin.')
+async def addAdmin(ctx: discord.ApplicationContext, user: discord.User):
+    logging.info(f"{ctx.author.name} has activated /addAdmin")
 
     # check if user is an admin
     vipUsersClass = VIPUsers()
     vipUsers = await vipUsersClass.loadVIPUserIDs()
-    if interaction.user.id not in vipUsers:
-        await interaction.response.send_message(f"Admin only command.")
+    if ctx.author.id not in vipUsers:
+        await ctx.respond(f"Admin only command.")
         return
     
     logging.info(f"user to add as admin: {user.display_name} {user.id}")
     # add to vip users
     await vipUsersClass.addVIPUserID(user.id)
-    await interaction.response.send_message(f"{user.display_name} has been added as an admin.")
+    await ctx.respond(f"{user.display_name} has been added as an admin.")
     logging.info(f"{user.display_name} has been added as an admin.")
-    logging.debug(f"/addAdmin from {interaction.user.name} has ended")
+    logging.debug(f"/addAdmin from {ctx.author.name} has ended")
     return
 
-@bot.tree.command(name='removeadmin', description='Admin Only - Removes user as an admin.')
-async def removeAdmin(interaction: discord.Interaction, user: discord.User):
-    logging.info(f"{interaction.user.name} has activated /removeAdmin")
+@bot.slash_command(name='removeadmin', description='Admin Only - Removes user as an admin.')
+async def removeAdmin(ctx: discord.ApplicationContext, user: discord.User):
+    logging.info(f"{ctx.author.name} has activated /removeAdmin")
 
     # check if user is an admin
     vipUsersClass = VIPUsers()
     vipUsers = await vipUsersClass.loadVIPUserIDs()
-    if interaction.user.id not in vipUsers:
-        await interaction.response.send_message(f"Admin only command.")
+    if ctx.author.id not in vipUsers:
+        await ctx.respond(f"Admin only command.")
         return
     
     logging.info(f"user to remove as admin: {user.display_name} {user.id}")
     # remove admin user
     await vipUsersClass.removeVIPUserID(user.id)
-    await interaction.response.send_message(f"{user.display_name} has been removed as an admin.")
+    await ctx.respond(f"{user.display_name} has been removed as an admin.")
     logging.info(f"{user.display_name} has been removed as an admin.")
-    logging.debug(f"/removeAdmin from {interaction.user.name} has ended")
+    logging.debug(f"/removeAdmin from {ctx.author.name} has ended")
     return
 
-@bot.tree.command(name='play', description='Play a Youtube, Spotify, or Soundcloud Song')
-async def play(interaction: discord.Interaction, query: str):
-    logging.info(f"{interaction.user.name} has activated /play")
+@bot.slash_command(name='play', description='Play a Youtube, Spotify, or Soundcloud Song')
+async def play(ctx: discord.ApplicationContext, query: str):
+    logging.info(f"{ctx.author.name} has activated /play")
 
     # check if user is banned
     bannedUsersClass = BannedUsers()
     bannedUsers = await bannedUsersClass.loadBannedUserIDs()
-    if interaction.user.id in bannedUsers:
-        await interaction.response.send_message(f"User **{interaction.user.display_name}** is banned from the bot.")
+    if ctx.author.id in bannedUsers:
+        await ctx.respond(f"User **{ctx.author.display_name}** is banned from the bot.")
         return
 
     # grab the music controller for designated guild
-    musicController = await bot.getGuildMusicController(guild= interaction.guild)
+    musicController = await bot.getGuildMusicController(guild= ctx.guild)
     # check if bot is connected to a voice channel
     if not musicController.isConnectedToVC():
         # check if user is in a voice channel
-        if not interaction.user.voice or not interaction.user.voice.channel:
-            await interaction.response.send_message("You or the Bot must be in a voice channel to use this command.")
+        if not ctx.author.voice or not ctx.author.voice.channel:
+            await ctx.respond("You or the Bot must be in a voice channel to use this command.")
             return
         else:
-            await musicController.two_four_seven(interaction.user.voice.channel, interaction.channel)
+            await musicController.two_four_seven(ctx.author.voice.channel, ctx.channel)
 
     # send initial response
-    await interaction.response.defer(thinking=True)
-    await interaction.followup.send(f"Searching For Song...")
+    await ctx.defer(thinking=True)
+    await ctx.respond(f"Searching For Song...")
 
     # send the query to determine where the song comes from
-    await musicController.determineSongSource(interaction.user, query)
+    await musicController.determineSongSource(ctx.author, query)
     
-    logging.debug(f"/play from {interaction.user.name} has ended")
+    logging.debug(f"/play from {ctx.author.name} has ended")
     return
 
-@bot.tree.command(name='playfile', description='Plays an Audio File.')
-async def playfile(interaction: discord.Interaction, file: discord.Attachment):
-    logging.info(f"{interaction.user.name} has activated /playfile")
+@bot.slash_command(name='playfile', description='Plays an Audio File.')
+async def playfile(ctx: discord.ApplicationContext, file: discord.Attachment):
+    logging.info(f"{ctx.author.name} has activated /playfile")
 
     # check if user is banned
     bannedUsersClass = BannedUsers()
     bannedUsers = await bannedUsersClass.loadBannedUserIDs()
-    if interaction.user.id in bannedUsers:
-        await interaction.response.send_message(f"User **{interaction.user.display_name}** is banned from the bot.")
+    if ctx.author.id in bannedUsers:
+        await ctx.respond(f"User **{ctx.author.display_name}** is banned from the bot.")
         return
 
     # grab the music controller for designated guild
-    musicController = await bot.getGuildMusicController(guild= interaction.guild)
+    musicController = await bot.getGuildMusicController(guild= ctx.guild)
     # check if bot is connected to a voice channel
     if not musicController.isConnectedToVC():
         # check if user is in a voice channel
-        if not interaction.user.voice or not interaction.user.voice.channel:
-            await interaction.response.send_message("You or the Bot must be in a voice channel to use this command.")
+        if not ctx.author.voice or not ctx.author.voice.channel:
+            await ctx.respond("You or the Bot must be in a voice channel to use this command.")
             return
         else:
-            await musicController.two_four_seven(interaction.user.voice.channel, interaction.channel)
+            await musicController.two_four_seven(ctx.author.voice.channel, ctx.channel)
 
     # send initial response
-    await interaction.response.defer(thinking=True)
-    await interaction.followup.send(f"Downloading Audio File: {file.filename}")
+    await ctx.defer(thinking=True)
+    await ctx.respond(f"Downloading Audio File: {file.filename}")
 
     # send the attachment to the music controller
-    await musicController.handleFile(interaction.user, file)
+    await musicController.handleFile(ctx.author, file)
     
-    logging.debug(f"/playfile from {interaction.user.name} has ended")
+    logging.debug(f"/playfile from {ctx.author.name} has ended")
     return
 
-@bot.tree.command(name='247', description='Enables 24/7 Mode.')
-async def two_four_seven(interaction: discord.Interaction, channel: discord.VoiceChannel):
-    logging.info(f"{interaction.user.name} has activated /247")
+@bot.slash_command(name='247', description='Enables 24/7 Mode.')
+async def two_four_seven(ctx: discord.ApplicationContext, channel: discord.VoiceChannel):
+    logging.info(f"{ctx.author.name} has activated /247")
 
     # check if user is banned
     bannedUsersClass = BannedUsers()
     bannedUsers = await bannedUsersClass.loadBannedUserIDs()
-    if interaction.user.id in bannedUsers:
-        await interaction.response.send_message(f"User **{interaction.user.display_name}** is banned from the bot.")
+    if ctx.author.id in bannedUsers:
+        await ctx.respond(f"User **{ctx.author.display_name}** is banned from the bot.")
         return
 
-    await interaction.response.defer(thinking=True)
+    await ctx.defer(thinking=True)
 
     # grab the music controller for designated guild
-    musicController = await bot.getGuildMusicController(guild= interaction.guild)
+    musicController = await bot.getGuildMusicController(guild= ctx.guild)
     # activate the /247 function
-    response = await musicController.two_four_seven(channel, interaction.channel)
+    response = await musicController.two_four_seven(channel, ctx.channel)
     if response:
-        await interaction.followup.send(f"Bot is currently in {response.channel.name}")
+        await ctx.respond(f"Bot is currently in {response.channel.name}")
     else:
-        await interaction.followup.send(f"Enabling 24/7 Mode in {channel.name}")
-    logging.debug(f"/247 from {interaction.user.name} has ended")
+        await ctx.respond(f"Enabling 24/7 Mode in {channel.name}")
+    logging.debug(f"/247 from {ctx.author.name} has ended")
     return
 
-@bot.tree.command(name='lofi', description='Plays a 24/7 Lofi Radio.')
-async def lofi(interaction: discord.Interaction):
-    logging.info(f"{interaction.user.name} has activated /lofi")
+@bot.slash_command(name='lofi', description='Plays a 24/7 Lofi Radio.')
+async def lofi(ctx: discord.ApplicationContext):
+    logging.info(f"{ctx.author.name} has activated /lofi")
 
     # check if user is banned
     bannedUsersClass = BannedUsers()
     bannedUsers = await bannedUsersClass.loadBannedUserIDs()
-    if interaction.user.id in bannedUsers:
-        await interaction.response.send_message(f"User **{interaction.user.display_name}** is banned from the bot.")
+    if ctx.author.id in bannedUsers:
+        await ctx.respond(f"User **{ctx.author.display_name}** is banned from the bot.")
         return
 
     # grab the music controller for designated guild
-    musicController = await bot.getGuildMusicController(guild= interaction.guild)
+    musicController = await bot.getGuildMusicController(guild= ctx.guild)
     # check if bot is connected to a voice channel
     if not musicController.isConnectedToVC():
         # check if user is in a voice channel
-        if not interaction.user.voice or not interaction.user.voice.channel:
-            await interaction.response.send_message("You or the Bot must be in a voice channel to use this command.")
+        if not ctx.author.voice or not ctx.author.voice.channel:
+            await ctx.respond("You or the Bot must be in a voice channel to use this command.")
             return
         else:
-            await musicController.two_four_seven(interaction.user.voice.channel, interaction.channel)
+            await musicController.two_four_seven(ctx.author.voice.channel, ctx.channel)
 
     # send initial response
-    await interaction.response.defer(thinking=True)
-    await interaction.followup.send(f"Searching For Song...")
+    await ctx.defer(thinking=True)
+    await ctx.respond(f"Searching For Song...")
 
     # stream link
     url = "https://www.youtube.com/watch?v=jfKfPfyJRdk"
 
     # send the query to determine where the song comes from
-    await musicController.determineSongSource(interaction.user, url)
+    await musicController.determineSongSource(ctx.author, url)
     
-    logging.debug(f"/lofi from {interaction.user.name} has ended")
+    logging.debug(f"/lofi from {ctx.author.name} has ended")
     return
 
-@bot.tree.command(name='lofijazz', description='Plays a 24/7 Lofi Jazz Radio.')
-async def lofijazz(interaction: discord.Interaction):
-    logging.info(f"{interaction.user.name} has activated /lofijazz")
+@bot.slash_command(name='lofijazz', description='Plays a 24/7 Lofi Jazz Radio.')
+async def lofijazz(ctx: discord.ApplicationContext):
+    logging.info(f"{ctx.author.name} has activated /lofijazz")
 
     # check if user is banned
     bannedUsersClass = BannedUsers()
     bannedUsers = await bannedUsersClass.loadBannedUserIDs()
-    if interaction.user.id in bannedUsers:
-        await interaction.response.send_message(f"User **{interaction.user.display_name}** is banned from the bot.")
+    if ctx.author.id in bannedUsers:
+        await ctx.respond(f"User **{ctx.author.display_name}** is banned from the bot.")
         return
 
     # grab the music controller for designated guild
-    musicController = await bot.getGuildMusicController(guild= interaction.guild)
+    musicController = await bot.getGuildMusicController(guild= ctx.guild)
     # check if bot is connected to a voice channel
     if not musicController.isConnectedToVC():
         # check if user is in a voice channel
-        if not interaction.user.voice or not interaction.user.voice.channel:
-            await interaction.response.send_message("You or the Bot must be in a voice channel to use this command.")
+        if not ctx.author.voice or not ctx.author.voice.channel:
+            await ctx.respond("You or the Bot must be in a voice channel to use this command.")
             return
         else:
-            await musicController.two_four_seven(interaction.user.voice.channel, interaction.channel)
+            await musicController.two_four_seven(ctx.author.voice.channel, ctx.channel)
 
     # send initial response
-    await interaction.response.defer(thinking=True)
-    await interaction.followup.send(f"Searching For Song...")
+    await ctx.defer(thinking=True)
+    await ctx.respond(f"Searching For Song...")
 
     # stream link
     url = "https://www.youtube.com/watch?v=HuFYqnbVbzY"
 
     # send the query to determine where the song comes from
-    await musicController.determineSongSource(interaction.user, url)
+    await musicController.determineSongSource(ctx.author, url)
     
-    logging.debug(f"/lofijazz from {interaction.user.name} has ended")
+    logging.debug(f"/lofijazz from {ctx.author.name} has ended")
     return
 
-@bot.tree.command(name='synthwave', description='Plays a 24/7 SynthWave Radio.')
-async def synthwave(interaction: discord.Interaction):
-    logging.info(f"{interaction.user.name} has activated /synthwave")
+@bot.slash_command(name='synthwave', description='Plays a 24/7 SynthWave Radio.')
+async def synthwave(ctx: discord.ApplicationContext):
+    logging.info(f"{ctx.author.name} has activated /synthwave")
 
     # check if user is banned
     bannedUsersClass = BannedUsers()
     bannedUsers = await bannedUsersClass.loadBannedUserIDs()
-    if interaction.user.id in bannedUsers:
-        await interaction.response.send_message(f"User **{interaction.user.display_name}** is banned from the bot.")
+    if ctx.author.id in bannedUsers:
+        await ctx.respond(f"User **{ctx.author.display_name}** is banned from the bot.")
         return
 
     # grab the music controller for designated guild
-    musicController = await bot.getGuildMusicController(guild= interaction.guild)
+    musicController = await bot.getGuildMusicController(guild= ctx.guild)
     # check if bot is connected to a voice channel
     if not musicController.isConnectedToVC():
         # check if user is in a voice channel
-        if not interaction.user.voice or not interaction.user.voice.channel:
-            await interaction.response.send_message("You or the Bot must be in a voice channel to use this command.")
+        if not ctx.author.voice or not ctx.author.voice.channel:
+            await ctx.respond("You or the Bot must be in a voice channel to use this command.")
             return
         else:
-            await musicController.two_four_seven(interaction.user.voice.channel, interaction.channel)
+            await musicController.two_four_seven(ctx.author.voice.channel, ctx.channel)
 
     # send initial response
-    await interaction.response.defer(thinking=True)
-    await interaction.followup.send(f"Searching For Song...")
+    await ctx.defer(thinking=True)
+    await ctx.respond(f"Searching For Song...")
 
     # stream link
     url = "https://www.youtube.com/watch?v=4xDzrJKXOOY"
 
     # send the query to determine where the song comes from
-    await musicController.determineSongSource(interaction.user, url)
+    await musicController.determineSongSource(ctx.author, url)
     
-    logging.debug(f"/synthwave from {interaction.user.name} has ended")
+    logging.debug(f"/synthwave from {ctx.author.name} has ended")
     return
     
-@bot.tree.command(name='pause', description='Pause the current song. Will resume the song if already paused.')
-async def pause(interaction: discord.Interaction):
-    logging.info(f"{interaction.user.name} has activated /pause")
+@bot.slash_command(name='pause', description='Pause the current song. Will resume the song if already paused.')
+async def pause(ctx: discord.ApplicationContext):
+    logging.info(f"{ctx.author.name} has activated /pause")
 
     # check if user is banned
     bannedUsersClass = BannedUsers()
     bannedUsers = await bannedUsersClass.loadBannedUserIDs()
-    if interaction.user.id in bannedUsers:
-        await interaction.response.send_message(f"User **{interaction.user.display_name}** is banned from the bot.")
+    if ctx.author.id in bannedUsers:
+        await ctx.respond(f"User **{ctx.author.display_name}** is banned from the bot.")
         return
     
     # grab the music controller for designated guild
-    musicController = await bot.getGuildMusicController(guild= interaction.guild)
+    musicController = await bot.getGuildMusicController(guild= ctx.guild)
     # call the /pause function
     response = await musicController.pauseSong()
     if response:
-        await interaction.response.send_message(f"Pausing the song.")
+        await ctx.respond(f"Pausing the song.")
     else:
-        await interaction.response.send_message(f"Resuming Playback.")
-    logging.debug(f"/pause from {interaction.user.name} has ended")
+        await ctx.respond(f"Resuming Playback.")
+    logging.debug(f"/pause from {ctx.author.name} has ended")
     return
     
-@bot.tree.command(name='resume', description='Resume playback')
-async def resume(interaction: discord.Interaction):
-    logging.info(f"{interaction.user.name} has activated /resume")
+@bot.slash_command(name='resume', description='Resume playback')
+async def resume(ctx: discord.ApplicationContext):
+    logging.info(f"{ctx.author.name} has activated /resume")
 
     # check if user is banned
     bannedUsersClass = BannedUsers()
     bannedUsers = await bannedUsersClass.loadBannedUserIDs()
-    if interaction.user.id in bannedUsers:
-        await interaction.response.send_message(f"User **{interaction.user.display_name}** is banned from the bot.")
+    if ctx.author.id in bannedUsers:
+        await ctx.respond(f"User **{ctx.author.display_name}** is banned from the bot.")
         return
     
     # grab the music controller for designated guild
-    musicController = await bot.getGuildMusicController(guild= interaction.guild)
+    musicController = await bot.getGuildMusicController(guild= ctx.guild)
     # call the /resume function
     await musicController.resumeSong()
-    await interaction.response.send_message(f"Resuming Playback.")
-    logging.debug(f"/resume from {interaction.user.name} has ended")
+    await ctx.respond(f"Resuming Playback.")
+    logging.debug(f"/resume from {ctx.author.name} has ended")
     return
 
-@bot.tree.command(name='shuffle', description='Shuffles the queue.')
-async def shuffle(interaction: discord.Interaction):
-    logging.info(f"{interaction.user.name} has activated /shuffle")
+@bot.slash_command(name='shuffle', description='Shuffles the queue.')
+async def shuffle(ctx: discord.ApplicationContext):
+    logging.info(f"{ctx.author.name} has activated /shuffle")
 
     # check if user is banned
     bannedUsersClass = BannedUsers()
     bannedUsers = await bannedUsersClass.loadBannedUserIDs()
-    if interaction.user.id in bannedUsers:
-        await interaction.response.send_message(f"User **{interaction.user.display_name}** is banned from the bot.")
+    if ctx.author.id in bannedUsers:
+        await ctx.respond(f"User **{ctx.author.display_name}** is banned from the bot.")
         return
     
     # grab the music controller for designated guild
-    musicController = await bot.getGuildMusicController(guild= interaction.guild)
+    musicController = await bot.getGuildMusicController(guild= ctx.guild)
     # call the /shuffle function
     await musicController.shuffleQueue()
-    await interaction.response.send_message(f"Queue has been shuffled.")
-    logging.debug(f"/shuffle from {interaction.user.name} has ended")
+    await ctx.respond(f"Queue has been shuffled.")
+    logging.debug(f"/shuffle from {ctx.author.name} has ended")
     return
 
-@bot.tree.command(name='time', description='Get the duration of the current song.')
-async def time(interaction: discord.Interaction):
-    logging.info(f"{interaction.user.name} has activated /time")
+@bot.slash_command(name='time', description='Get the duration of the current song.')
+async def time(ctx: discord.ApplicationContext):
+    logging.info(f"{ctx.author.name} has activated /time")
 
     # check if user is banned
     bannedUsersClass = BannedUsers()
     bannedUsers = await bannedUsersClass.loadBannedUserIDs()
-    if interaction.user.id in bannedUsers:
-        await interaction.response.send_message(f"User **{interaction.user.display_name}** is banned from the bot.")
+    if ctx.author.id in bannedUsers:
+        await ctx.respond(f"User **{ctx.author.display_name}** is banned from the bot.")
         return
     
     # grab the music controller for designated guild
-    musicController = await bot.getGuildMusicController(guild= interaction.guild)
+    musicController = await bot.getGuildMusicController(guild= ctx.guild)
     # call the /time function
     response = await musicController.getCurrentDuration()
-    await interaction.response.send_message(f"{response}", ephemeral=True, delete_after=5)
-    logging.debug(f"/time from {interaction.user.name} has ended")
+    await ctx.respond(f"{response}", ephemeral=True, delete_after=5)
+    logging.debug(f"/time from {ctx.author.name} has ended")
     return
 
-@bot.tree.command(name='stop', description='Stop playback and clear queue')
-async def stop(interaction: discord.Interaction):
-    logging.info(f"{interaction.user.name} has activated /stop")
+@bot.slash_command(name='stop', description='Stop playback and clear queue')
+async def stop(ctx: discord.ApplicationContext):
+    logging.info(f"{ctx.author.name} has activated /stop")
 
     # check if user is banned
     bannedUsersClass = BannedUsers()
     bannedUsers = await bannedUsersClass.loadBannedUserIDs()
-    if interaction.user.id in bannedUsers:
-        await interaction.response.send_message(f"User **{interaction.user.display_name}** is banned from the bot.")
+    if ctx.author.id in bannedUsers:
+        await ctx.respond(f"User **{ctx.author.display_name}** is banned from the bot.")
         return
     
     # grab the music controller for designated guild
-    musicController = await bot.getGuildMusicController(guild= interaction.guild)
+    musicController = await bot.getGuildMusicController(guild= ctx.guild)
     if not musicController.getIsMajorityVote():
-        await interaction.response.send_message(f"Stopping playback and clearing queue.")
+        await ctx.respond(f"Stopping playback and clearing queue.")
         # call the /stop function
         await musicController.stopAllSongs()
     else:
-        message = await interaction.response.send_message(f"Stop current song and clear the queue? ***Needs all votes***")
+        message = await ctx.respond(f"Stop current song and clear the queue? ***Needs all votes***")
         # call the /stop function
         await musicController.stopAllSongs(message=message.resource)
-    logging.debug(f"/stop from {interaction.user.name} has ended")
+    logging.debug(f"/stop from {ctx.author.name} has ended")
     return
 
-@bot.tree.command(name='dc', description='Kicks the bot from the voice channel, and turns off 24/7.')
-async def kick(interaction: discord.Interaction):
-    logging.info(f"{interaction.user.name} has activated /dc")
+@bot.slash_command(name='dc', description='Kicks the bot from the voice channel, and turns off 24/7.')
+async def kick(ctx: discord.ApplicationContext):
+    logging.info(f"{ctx.author.name} has activated /dc")
 
     # check if user is banned
     bannedUsersClass = BannedUsers()
     bannedUsers = await bannedUsersClass.loadBannedUserIDs()
-    if interaction.user.id in bannedUsers:
-        await interaction.response.send_message(f"User **{interaction.user.display_name}** is banned from the bot.")
+    if ctx.author.id in bannedUsers:
+        await ctx.respond(f"User **{ctx.author.display_name}** is banned from the bot.")
         return
     
     # check if user is an admin
     vipUsersClass = VIPUsers()
     vipUsers = await vipUsersClass.loadVIPUserIDs()
-    if interaction.user.id not in vipUsers:
-        await interaction.response.send_message(f"Admin only command.")
+    if ctx.author.id not in vipUsers:
+        await ctx.respond(f"Admin only command.")
         return
     
     # grab the music controller for designated guild
-    musicController = await bot.getGuildMusicController(guild= interaction.guild)
+    musicController = await bot.getGuildMusicController(guild= ctx.guild)
     # call the /dc function
     await musicController.hardDisconnect()
     # pop the music Controller
-    await bot.popGuildMusicController(guild= interaction.guild)
-    await interaction.response.send_message(f"Bot has been disconnected from the voice channel, and 24/7 has been disabled.")
-    logging.debug(f"/dc from {interaction.user.name} has ended")
+    await bot.popGuildMusicController(guild= ctx.guild)
+    await ctx.respond(f"Bot has been disconnected from the voice channel, and 24/7 has been disabled.")
+    logging.debug(f"/dc from {ctx.author.name} has ended")
     return
 
-@bot.tree.command(name='skip', description='Skip the current song')
-async def skip(interaction: discord.Interaction):
-    logging.info(f"{interaction.user.name} has activated /skip")
+@bot.slash_command(name='skip', description='Skip the current song')
+async def skip(ctx: discord.ApplicationContext):
+    logging.info(f"{ctx.author.name} has activated /skip")
 
     # check if user is banned
     bannedUsersClass = BannedUsers()
     bannedUsers = await bannedUsersClass.loadBannedUserIDs()
-    if interaction.user.id in bannedUsers:
-        await interaction.response.send_message(f"User **{interaction.user.display_name}** is banned from the bot.")
+    if ctx.author.id in bannedUsers:
+        await ctx.respond(f"User **{ctx.author.display_name}** is banned from the bot.")
         return
     
     # grab the music controller for designated guild
-    musicController = await bot.getGuildMusicController(guild= interaction.guild)
+    musicController = await bot.getGuildMusicController(guild= ctx.guild)
     if not musicController.getIsMajorityVote():
-        await interaction.response.send_message(f"Skipping song.")
+        await ctx.respond(f"Skipping song.")
         # call the /skip function
         await musicController.skipSong()
     else:
-        message = await interaction.response.send_message(f"Skip the Song?")
+        message = await ctx.respond(f"Skip the Song?")
         # call the /skip function
         await musicController.skipSong(message=message.resource)
-    logging.debug(f"/skip from {interaction.user.name} has ended")
+    logging.debug(f"/skip from {ctx.author.name} has ended")
     return
 
-@bot.tree.command(name='loop', description='Loops the currently playing song.')
-async def loop(interaction: discord.Interaction):
-    logging.info(f"{interaction.user.name} has activated /loop")
+@bot.slash_command(name='loop', description='Loops the currently playing song.')
+async def loop(ctx: discord.ApplicationContext):
+    logging.info(f"{ctx.author.name} has activated /loop")
 
     # check if user is banned
     bannedUsersClass = BannedUsers()
     bannedUsers = await bannedUsersClass.loadBannedUserIDs()
-    if interaction.user.id in bannedUsers:
-        await interaction.response.send_message(f"User **{interaction.user.display_name}** is banned from the bot.")
+    if ctx.author.id in bannedUsers:
+        await ctx.respond(f"User **{ctx.author.display_name}** is banned from the bot.")
         return
     
     # grab the music controller for designated guild
-    musicController = await bot.getGuildMusicController(guild= interaction.guild)
+    musicController = await bot.getGuildMusicController(guild= ctx.guild)
     # call the /loop function
     response = await musicController.setLooping()
     if response:
-        await interaction.response.send_message(f"Looping Enabled.")
+        await ctx.respond(f"Looping Enabled.")
     else:
-        await interaction.response.send_message(f"Looping Disabled.")
-    logging.debug(f"/loop from {interaction.user.name} has ended")
+        await ctx.respond(f"Looping Disabled.")
+    logging.debug(f"/loop from {ctx.author.name} has ended")
     return
 
-@bot.tree.command(name='queue', description='Display the queue')
-async def queue(interaction: discord.Interaction):
-    logging.info(f"{interaction.user.name} has activated /queue")
+@bot.slash_command(name='queue', description='Display the queue')
+async def queue(ctx: discord.ApplicationContext):
+    logging.info(f"{ctx.author.name} has activated /queue")
 
     # check if user is banned
     bannedUsersClass = BannedUsers()
     bannedUsers = await bannedUsersClass.loadBannedUserIDs()
-    if interaction.user.id in bannedUsers:
-        await interaction.response.send_message(f"User **{interaction.user.display_name}** is banned from the bot.")
+    if ctx.author.id in bannedUsers:
+        await ctx.respond(f"User **{ctx.author.display_name}** is banned from the bot.")
         return
     
     # grab the music controller for designated guild
-    musicController = await bot.getGuildMusicController(guild= interaction.guild)
+    musicController = await bot.getGuildMusicController(guild= ctx.guild)
     # get songQueue from the music controller
     queue = musicController.getSongQueue()
     # if no songs in queue
@@ -644,76 +644,76 @@ async def queue(interaction: discord.Interaction):
             color=0xa600ff,
         )
         embed.set_thumbnail(url=bot.user.avatar.url)
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await ctx.respond(embed=embed, ephemeral=True)
         return
 
     # grab the QueueView Class
-    view = QueueView(queue, bot, interaction.user)
+    view = QueueView(queue, bot, ctx.author)
     # send the discord embed for the queue
-    await view.send_page(interaction, first_response=True)
-    logging.debug(f"/queue from {interaction.user.name} has ended")
+    await view.send_page(ctx.interaction, first_response=True)
+    logging.debug(f"/queue from {ctx.author.name} has ended")
     return
 
-@bot.tree.command(name='search', description='Search for the top 10 results.')
-async def search(interaction: discord.Interaction, query: str):
-    logging.info(f"{interaction.user.name} has activated /search")
+@bot.slash_command(name='search', description='Search for the top 10 results.')
+async def search(ctx: discord.ApplicationContext, query: str):
+    logging.info(f"{ctx.author.name} has activated /search")
 
     # check if user is banned
     bannedUsersClass = BannedUsers()
     bannedUsers = await bannedUsersClass.loadBannedUserIDs()
-    if interaction.user.id in bannedUsers:
-        await interaction.response.send_message(f"User **{interaction.user.display_name}** is banned from the bot.")
+    if ctx.author.id in bannedUsers:
+        await ctx.respond(f"User **{ctx.author.display_name}** is banned from the bot.")
         return
     
     # send the initial discord message
-    await interaction.response.defer(thinking=True)
-    await interaction.followup.send(f"Searching Youtube: {query}")
+    await ctx.defer(thinking=True)
+    await ctx.respond(f"Searching Youtube: {query}")
     # grab the music controller for designated guild
-    musicController = await bot.getGuildMusicController(guild= interaction.guild)
+    musicController = await bot.getGuildMusicController(guild= ctx.guild)
     # search for the query
     result = await musicController.searchSongs(query)
     if not result:
-        await interaction.channel.send(f"Failed to search youtube.")
+        await ctx.channel.send(f"Failed to search youtube.")
         return
     # grab the SearchView Class
     view = SearchView(result, musicController, bot)
     # send the discord embed for the search
-    await view.send_page(interaction)
-    logging.debug(f"/search from {interaction.user.name} has ended")
+    await view.send_page(ctx.interaction)
+    logging.debug(f"/search from {ctx.author.name} has ended")
     return
 
-@bot.tree.command(name='sync', description='Admin only - Syncs the command tree.')
-async def sync(interaction: discord.Interaction):
-    logging.info(f"{interaction.user.name} has activated /sync")
+@bot.slash_command(name='sync', description='Admin only - Syncs the command tree.')
+async def sync(ctx: discord.ApplicationContext):
+    logging.info(f"{ctx.author.name} has activated /sync")
 
     # check if user is an admin
     vipUsersClass = VIPUsers()
     vipUsers = await vipUsersClass.loadVIPUserIDs()
-    if interaction.user.id not in vipUsers:
-        await interaction.response.send_message(f"Admin only command.")
+    if ctx.author.id not in vipUsers:
+        await ctx.respond(f"Admin only command.")
         return
 
-    await bot.tree.sync()
-    await interaction.response.send_message('Command tree synced.', delete_after=5)
+    pass
+    await ctx.respond('Command tree synced.', delete_after=5)
     logging.info('Command tree synced.')
 
-@bot.tree.command(name='restart', description='Admin only - Completely restart the bot.')
-async def restart(interaction: discord.Interaction):
-    logging.info(f"{interaction.user.name} has activated /restart")
+@bot.slash_command(name='restart', description='Admin only - Completely restart the bot.')
+async def restart(ctx: discord.ApplicationContext):
+    logging.info(f"{ctx.author.name} has activated /restart")
 
     # check if user is an admin
     vipUsersClass = VIPUsers()
     vipUsers = await vipUsersClass.loadVIPUserIDs()
-    if interaction.user.id not in vipUsers:
-        await interaction.response.send_message(f"Admin only command.")
+    if ctx.author.id not in vipUsers:
+        await ctx.respond(f"Admin only command.")
         return
     
-    await interaction.response.send_message('Restarting Bot. If Bot is still in VC, disconnect them before doing a command.')
+    await ctx.respond('Restarting Bot. If Bot is still in VC, disconnect them before doing a command.')
     logging.info('Restarting Bot')
     bot.restart_bot()
 
-@bot.tree.command(name='help', description='List of all commands.')
-async def help(interaction: discord.Interaction):
+@bot.slash_command(name='help', description='List of all commands.')
+async def help(ctx: discord.ApplicationContext):
     
     embed = discord.Embed(
         title="All Commands",
@@ -744,7 +744,7 @@ async def help(interaction: discord.Interaction):
     embed.add_field(name="/RemoveAdmin", value="Admin Only - Removes admin from user.", inline=False)
     embed.add_field(name="Available Voice Commands:", value="'Jarvis play', 'Jarvis skip', 'Jarvis next', 'Jarvis loop', 'Jarvis pause', 'Jarvis stop'", inline=False)
     embed.set_thumbnail(url=bot.user.avatar.url)
-    await interaction.response.send_message(embed=embed)
+    await ctx.respond(embed=embed)
     
 
 if __name__ == "__main__":

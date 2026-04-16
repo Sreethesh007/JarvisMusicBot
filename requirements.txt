@@ -7,8 +7,7 @@ brotli==1.2.0
 certifi==2025.4.26
 cffi==1.17.1
 charset-normalizer==3.4.2
-discord-ext-voice-recv
-discord.py[voice]>=2.7.0
+py-cord[voice]
 dotenv==0.9.9
 frozenlist==1.7.0
 idna==3.10
@@ -30,3 +29,4 @@ yt-dlp-ejs
 standard-aifc
 edge-tts
 google-genai
+webrtcvad==2.0.10

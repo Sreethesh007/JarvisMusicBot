@@ -56,7 +56,7 @@ class JarvisBot(discord.Bot):
             self.musicControllers.pop(guild.id)
 
     def restart_bot(self):
-        os.execv(sys.executable, ['python'] + sys.argv)
+        os.execv(sys.executable, [sys.executable, os.path.abspath(__file__)])
 
     async def on_ready(self):
         logging.info(f"{self.user} is now running.")

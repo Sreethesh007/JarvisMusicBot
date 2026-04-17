@@ -4,8 +4,10 @@ import re
 import asyncio
 import time
 import random
-from discord import app_commands
-from discord.ext import commands, voice_recv
+from discord.ext import commands
+import discord.sinks
+import io
+import webrtcvad
 from typing import Optional, Tuple
 import speech_recognition as sr
 import logging
@@ -17,6 +19,85 @@ from scripts.ytDLP import VideoSearcher, getSongExpiration
 from embed_views.music_buttons import MusicButtons
 from scripts.spotify import SpotifyController
 from management.nlp_processor import NLPProcessor
+
+
+class RealTimeSpeechRecognitionSink(discord.sinks.Sink):
+    def __init__(self, process_cb, client_loop, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.process_cb = process_cb
+        self.client_loop = client_loop
+        self.vad = webrtcvad.Vad(3)  # High aggressiveness for silence detection
+        self.user_buffers = {}
+        self.user_states = {}
+
+    @discord.sinks.core.Filters.container
+    def write(self, data, user):
+        if user not in self.user_buffers:
+            self.user_buffers[user] = bytearray()
+            self.user_states[user] = {'silence_frames': 0, 'speaking': False, 'current_phrase': bytearray()}
+
+        # PyCord gives us 48000Hz, stereo, 16-bit PCM.
+        # webrtcvad needs 8k, 16k, 32k, or 48k Hz, mono, 16-bit.
+        # Extract mono (left channel).
+        mono_data = bytearray()
+        for i in range(0, len(data), 4):
+            mono_data.extend(data[i:i+2])
+
+        self.user_buffers[user].extend(mono_data)
+
+        # Process in 30ms frames (48000Hz * 30ms = 1440 samples = 2880 bytes for 16-bit)
+        frame_size = 2880
+        while len(self.user_buffers[user]) >= frame_size:
+            frame = self.user_buffers[user][:frame_size]
+            self.user_buffers[user] = self.user_buffers[user][frame_size:]
+
+            is_speech = self.vad.is_speech(bytes(frame), 48000)
+
+            if is_speech:
+                self.user_states[user]['speaking'] = True
+                self.user_states[user]['silence_frames'] = 0
+                self.user_states[user]['current_phrase'].extend(frame)
+            else:
+                self.user_states[user]['silence_frames'] += 1
+                if self.user_states[user]['speaking']:
+                    self.user_states[user]['current_phrase'].extend(frame)
+
+            # If speaking and then silence for ~0.9 seconds (30 frames)
+            if self.user_states[user]['speaking'] and self.user_states[user]['silence_frames'] > 30:
+                audio_data_bytes = bytes(self.user_states[user]['current_phrase'])
+
+                # Reset state
+                self.user_states[user]['speaking'] = False
+                self.user_states[user]['silence_frames'] = 0
+                self.user_states[user]['current_phrase'] = bytearray()
+
+                # Pass to speech_recognition
+                audio = sr.AudioData(audio_data_bytes, 48000, 2)
+
+                import threading
+                def run_cb(audio_data, u_id):
+                    try:
+                        # PyCord's Sink gives us the user ID as an integer.
+                        member = self.vc.guild.get_member(u_id) if self.vc and self.vc.guild else None
+                        if member:
+                            import asyncio
+                            # run coroutine threadsafe if it's async, otherwise run directly
+                            if asyncio.iscoroutinefunction(self.process_cb):
+                                asyncio.run_coroutine_threadsafe(
+                                    self.process_cb(sr.Recognizer(), audio_data, member),
+                                    self.client_loop
+                                )
+                            else:
+                                # But wait, process_wit was a regular function that dispatched an async event!
+                                self.process_cb(sr.Recognizer(), audio_data, member)
+                        else:
+                            logging.debug(f"Could not resolve member for ID {u_id}")
+                    except Exception as e:
+                        logging.error(f"Error in speech processing: {e}")
+                threading.Thread(target=run_cb, args=(audio, user), daemon=True).start()
+
+    def cleanup(self):
+        super().cleanup()
 
 class Song:
     def __init__(self, title: str, url: str, link: str, thumbnail: str, duration: int, user: discord.User, isFile: bool):
@@ -300,6 +381,8 @@ class MusicController:
             voice_client = discord.utils.get(self.client.voice_clients, guild=self.guild)
             self.songQueue = []
             self.isLooping = False
+            if getattr(voice_client, 'recording', False):
+                voice_client.stop_recording()
             await voice_client.disconnect(force=False)
             logging.debug(f"{self.guild.name} Music Controller has been soft disconnected.")
 
@@ -309,6 +392,8 @@ class MusicController:
             voice_client = discord.utils.get(self.client.voice_clients, guild=self.guild)
             self.songQueue = []
             self.isLooping = False
+            if getattr(voice_client, 'recording', False):
+                voice_client.stop_recording()
             await voice_client.disconnect(force=True)
             logging.debug(f"{self.guild.name} Music Controller has been hard disconnected.")
 
@@ -317,7 +402,7 @@ class MusicController:
         logging.debug("Starting /247 function")
         if self.isConnectedToVC() is not True:
             logging.debug("Bot is not in channel, connecting...")
-            await voiceChannel.connect(cls=voice_recv.VoiceRecvClient)
+            await voiceChannel.connect()
             logging.info(f"Bot succesfully connected to {voiceChannel.name}")
             self.voiceChannel = voiceChannel
             self.textChannel = textChannel
@@ -327,7 +412,7 @@ class MusicController:
             voice_client = discord.utils.get(self.client.voice_clients, guild=self.guild)
             logging.debug(f"Bot is already in channel: {voice_client.channel.name}")
             # If already listening, do not start again to prevent websocket loop 4006
-            if not getattr(voice_client, 'is_listening', lambda: False)():
+            if not getattr(voice_client, 'recording', False):
                 await self.startVoiceRecording()
             return voice_client    
         
@@ -352,9 +437,16 @@ class MusicController:
             return
 
         try:
-            if getattr(voice_client, 'is_listening', lambda: False)():
-                voice_client.stop_listening()
-            voice_client.listen(voice_recv.extras.speechrecognition.SpeechRecognitionSink(process_cb=process_wit, default_recognizer="google"))
+            if getattr(voice_client, 'recording', False):
+                voice_client.stop_recording()
+
+            async def finished_callback(sink, *args):
+                logging.debug("Voice recording finished.")
+
+            voice_client.start_recording(
+                RealTimeSpeechRecognitionSink(process_cb=process_wit, client_loop=self.client.loop),
+                finished_callback
+            )
         except Exception as e:
             logging.exception(e)
 

@@ -23,7 +23,7 @@ $activatePs = Join-Path -Path '.' -ChildPath 'venv\Scripts\Activate.ps1'
 $activateBat = Join-Path -Path '.' -ChildPath 'venv\Scripts\activate.bat'
 if (Test-Path $activatePs) {
     Write-Host 'Activating venv (PowerShell)...'
-    & $activatePs
+    . $activatePs
 } elseif (Test-Path $activateBat) {
     Write-Host 'Activating venv (cmd)...'
     & $activateBat

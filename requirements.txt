@@ -30,4 +30,4 @@ standard-aifc
 edge-tts
 google-genai
 webrtcvad==2.0.10
-setuptools
+setuptools<70.0.0

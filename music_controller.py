@@ -422,15 +422,27 @@ class MusicController:
 
         # override the speech recognition to use google
         def process_wit(recognizer: sr.Recognizer, audio: sr.AudioData, user: Optional[str]) -> Optional[str]:
-            text: Optional[str] = None
-            try:
-                func = getattr(recognizer, 'recognize_google', recognizer.recognize_google)
-                text = func(audio)
-                # send the transcribed audio to an async event
-                asyncio.run_coroutine_threadsafe(self.handleTranscribedAudio(user, text), self.client.loop)
-            except sr.UnknownValueError:
-                pass
-            return text
+            def background_recognize():
+                try:
+                    func = getattr(recognizer, 'recognize_google', recognizer.recognize_google)
+                    text = func(audio)
+                    if text:
+                        # send the transcribed audio to an async event
+                        asyncio.run_coroutine_threadsafe(self.handleTranscribedAudio(user, text), self.client.loop)
+                except sr.UnknownValueError:
+                    pass
+                except Exception as e:
+                    logging.error(f"Speech recognition error: {e}")
+
+            # Run the blocking recognizer function in an executor to avoid blocking the event loop
+            async def dispatch_recognition():
+                try:
+                    await self.client.loop.run_in_executor(None, background_recognize)
+                except Exception as e:
+                    logging.error(f"Failed to dispatch speech recognition: {e}")
+
+            asyncio.run_coroutine_threadsafe(dispatch_recognition(), self.client.loop)
+            return None
         
         voice_client = discord.utils.get(self.client.voice_clients, guild=self.guild)
         if not voice_client:
@@ -543,7 +555,10 @@ class MusicController:
                 try:
                     tts_filename = f"tts_error_{self.guild.id}.mp3"
                     await self.generate_tts("Sorry, I don't understand.", tts_filename)
-                    tts_player = discord.FFmpegPCMAudio(tts_filename)
+                    tts_player = await self.client.loop.run_in_executor(
+                None,
+                lambda: discord.FFmpegPCMAudio(tts_filename)
+            )
 
                     def after_tts(error):
                         if error:
@@ -877,8 +892,12 @@ class MusicController:
                 # update the current songs stream link
                 song.link = result['link']
 
-        # create the discord player for current song
-        player = discord.FFmpegOpusAudio(song.link, **ffmpeg_options)
+        # create the discord player for current song in an executor to prevent blocking
+        # Popen can take a significant amount of time and blocks the event loop
+        player = await self.client.loop.run_in_executor(
+            None,
+            lambda: discord.FFmpegOpusAudio(song.link, **ffmpeg_options)
+        )
 
         # function to call after a song is done playing
         def after_playing(error):
@@ -921,7 +940,10 @@ class MusicController:
         try:
             tts_filename = f"tts_{self.guild.id}.mp3"
             await self.generate_tts(f"Playing {song.title}", tts_filename)
-            tts_player = discord.FFmpegPCMAudio(tts_filename)
+            tts_player = await self.client.loop.run_in_executor(
+                None,
+                lambda: discord.FFmpegPCMAudio(tts_filename)
+            )
             self.isPlayingTTS = True
             voice_client.play(tts_player, after=after_tts)
         except Exception as e:

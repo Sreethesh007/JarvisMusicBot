@@ -25,10 +25,17 @@ sys.modules['management.banned_users'].BannedUsers = MockBannedUsers
 
 sys.modules['management.bot_keywords'] = MagicMock()
 sys.modules['management.vip_users'] = MagicMock()
+
+# Un-mock nlp_processor to avoid breaking this test when it runs last
+if 'management.nlp_processor' in sys.modules and isinstance(sys.modules['management.nlp_processor'], MagicMock):
+    del sys.modules['management.nlp_processor']
+
 sys.modules['scripts.ytDLP'] = MagicMock()
 sys.modules['scripts.ytDLP'].getSongExpiration = MagicMock(return_value=9999999999)
 sys.modules['scripts.spotify'] = MagicMock()
 
+import management.nlp_processor as nlp
+# Let NLPProcessor stay native so it is imported
 from management.nlp_processor import NLPProcessor
 
 logging.basicConfig(level=logging.DEBUG)

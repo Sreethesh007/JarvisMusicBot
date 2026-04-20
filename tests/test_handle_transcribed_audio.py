@@ -25,9 +25,8 @@ sys.modules['management.banned_users'].BannedUsers = MockBannedUsers
 
 sys.modules['management.bot_keywords'] = MagicMock()
 sys.modules['management.vip_users'] = MagicMock()
-sys.modules['management.nlp_processor'] = MagicMock()
-sys.modules['management.nlp_processor'].NLPProcessor = MagicMock()
 
+# Instead of overwriting NLPProcessor globally via sys.modules, patch it directly on MusicController instance
 sys.modules['scripts.ytDLP'] = MagicMock()
 sys.modules['scripts.ytDLP'].getSongExpiration = MagicMock(return_value=9999999999)
 sys.modules['scripts.spotify'] = MagicMock()
@@ -93,6 +92,9 @@ class TestHandleTranscribedAudio(unittest.IsolatedAsyncioTestCase):
 
         mc._get_bot_keywords = AsyncMock(return_value=['jarvis'])
         mc.generate_tts = AsyncMock()
+
+        # safely mock the instance method
+        mc.nlp_processor = MagicMock()
         mc.nlp_processor.determine_intent = AsyncMock(return_value=("play", "test song"))
         mc.handleYoutubeSearch = AsyncMock()
 

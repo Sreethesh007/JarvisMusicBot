@@ -15,11 +15,14 @@ from embed_views.search_view import SearchView
 from embed_views.keywords_view import KeywordsView
 
 # set up logging
+log_dir = Path(__file__).resolve().parent / "data"
+log_dir.mkdir(parents=True, exist_ok=True)
+
 logging.basicConfig(
     level=logging.INFO,  # Set logging level
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler(f"{Path(__file__).resolve().parent / 'bot_log.log'}", mode='w'),
+        logging.FileHandler(f"{log_dir / 'bot_log.log'}", mode='w'),
         logging.StreamHandler()
     ]
 )

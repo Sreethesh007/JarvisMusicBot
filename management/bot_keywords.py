@@ -7,9 +7,10 @@ import asyncio
 
 class BotKeywords:
     def __init__(self):
-        # Get root directory of script
-        root_dir = Path(__file__).resolve().parent
-        self.bot_keywords_file = root_dir / "bot_keywords.json"
+        # Use centralized data directory
+        data_dir = Path(__file__).resolve().parent.parent / "data"
+        data_dir.mkdir(parents=True, exist_ok=True)
+        self.bot_keywords_file = data_dir / "bot_keywords.json"
         # Ensure file exists
         if not self.bot_keywords_file.exists():
             self.bot_keywords_file.write_text(json.dumps(["jarvis"]))  # start with default keyword

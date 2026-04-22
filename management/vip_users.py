@@ -10,9 +10,10 @@ class VIPUsers:
     def __init__(self):
         load_dotenv(dotenv_path=Path(__file__).resolve().parent.parent / ".env")
         self.owner_id = int(os.getenv("OWNER", "0"))
-        # Get root directory of script
-        root_dir = Path(__file__).resolve().parent
-        self.VIP_USERS_FILE = root_dir / "vip_users_list.json"
+        # Use centralized data directory
+        data_dir = Path(__file__).resolve().parent.parent / "data"
+        data_dir.mkdir(parents=True, exist_ok=True)
+        self.VIP_USERS_FILE = data_dir / "vip_users_list.json"
         # Ensure file exists
         if not self.VIP_USERS_FILE.exists():
             self.VIP_USERS_FILE.write_text(json.dumps([]))  # start with empty list

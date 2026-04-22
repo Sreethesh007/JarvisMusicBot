@@ -7,9 +7,10 @@ import asyncio
 
 class BannedUsers:
     def __init__(self):
-        # Get root directory of script
-        root_dir = Path(__file__).resolve().parent
-        self.BANNED_USERS_FILE = root_dir / "banned_users_list.json"
+        # Use centralized data directory
+        data_dir = Path(__file__).resolve().parent.parent / "data"
+        data_dir.mkdir(parents=True, exist_ok=True)
+        self.BANNED_USERS_FILE = data_dir / "banned_users_list.json"
         # Ensure file exists
         if not self.BANNED_USERS_FILE.exists():
             self.BANNED_USERS_FILE.write_text(json.dumps([]))  # start with empty list

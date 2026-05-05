@@ -7,7 +7,7 @@ brotli==1.2.0
 certifi==2025.4.26
 cffi==1.17.1
 charset-normalizer==3.4.2
-discord-ext-voice-recv
+git+https://github.com/vocolboy/discord-ext-voice-recv.git@main#egg=discord-ext-voice-recv
 discord.py[voice]>=2.7.0
 dotenv==0.9.9
 frozenlist==1.7.0

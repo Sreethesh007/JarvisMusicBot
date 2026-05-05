@@ -274,7 +274,7 @@ async def play(ctx: discord.ApplicationContext, query: str):
             await musicController.two_four_seven(ctx.author.voice.channel, ctx.channel)
 
     # send initial response
-    await ctx.defer(thinking=True)
+    await ctx.defer()
     await ctx.respond(f"Searching For Song...")
 
     # send the query to determine where the song comes from
@@ -306,7 +306,7 @@ async def playfile(ctx: discord.ApplicationContext, file: discord.Attachment):
             await musicController.two_four_seven(ctx.author.voice.channel, ctx.channel)
 
     # send initial response
-    await ctx.defer(thinking=True)
+    await ctx.defer()
     await ctx.respond(f"Downloading Audio File: {file.filename}")
 
     # send the attachment to the music controller
@@ -326,7 +326,7 @@ async def two_four_seven(ctx: discord.ApplicationContext, channel: discord.Voice
         await ctx.respond(f"User **{ctx.author.display_name}** is banned from the bot.")
         return
 
-    await ctx.defer(thinking=True)
+    await ctx.defer()
 
     # grab the music controller for designated guild
     musicController = await bot.getGuildMusicController(guild= ctx.guild)
@@ -362,7 +362,7 @@ async def lofi(ctx: discord.ApplicationContext):
             await musicController.two_four_seven(ctx.author.voice.channel, ctx.channel)
 
     # send initial response
-    await ctx.defer(thinking=True)
+    await ctx.defer()
     await ctx.respond(f"Searching For Song...")
 
     # stream link
@@ -397,7 +397,7 @@ async def lofijazz(ctx: discord.ApplicationContext):
             await musicController.two_four_seven(ctx.author.voice.channel, ctx.channel)
 
     # send initial response
-    await ctx.defer(thinking=True)
+    await ctx.defer()
     await ctx.respond(f"Searching For Song...")
 
     # stream link
@@ -432,7 +432,7 @@ async def synthwave(ctx: discord.ApplicationContext):
             await musicController.two_four_seven(ctx.author.voice.channel, ctx.channel)
 
     # send initial response
-    await ctx.defer(thinking=True)
+    await ctx.defer()
     await ctx.respond(f"Searching For Song...")
 
     # stream link
@@ -666,7 +666,7 @@ async def search(ctx: discord.ApplicationContext, query: str):
         return
     
     # send the initial discord message
-    await ctx.defer(thinking=True)
+    await ctx.defer()
     await ctx.respond(f"Searching Youtube: {query}")
     # grab the music controller for designated guild
     musicController = await bot.getGuildMusicController(guild= ctx.guild)

@@ -5,7 +5,13 @@ ENV PYTHONUNBUFFERED=1
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
        ffmpeg \
+       git \
+       curl \
+       unzip \
+       ca-certificates \
        libsndfile1 \
+    && curl -fsSL https://deno.land/install.sh | sh \
+    && ln -s /root/.deno/bin/deno /usr/local/bin/deno \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

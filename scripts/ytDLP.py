@@ -27,6 +27,14 @@ class VideoSearcher():
     def __init__(self):
         root_dir = Path(__file__).resolve().parent.parent
         self.cookies_path = root_dir / "cookies.txt"
+        self.data_cookies_path = root_dir / "data" / "cookies.txt"
+
+    def _cookiefile(self):
+        if self.cookies_path.exists():
+            return str(self.cookies_path)
+        if self.data_cookies_path.exists():
+            return str(self.data_cookies_path)
+        return str(self.cookies_path)
 
     async def getVideoInfoFromURL(self, video_url):
         loop = asyncio.get_running_loop()
@@ -36,8 +44,9 @@ class VideoSearcher():
                 'format': 'bestaudio/best',
                 'quiet': True,
                 'noplaylist': True,
-                'cookiefile': str(self.cookies_path),
+                'cookiefile': self._cookiefile(),
                 'cachedir': False,
+                'js_runtimes': {'deno': {}},
             }
             with YoutubeDL(yt_dlp_options) as ytdlp:
                 info = ytdlp.extract_info(video_url, download=False)
@@ -58,10 +67,11 @@ class VideoSearcher():
                 'format': 'bestaudio/best',
                 'quiet': True,
                 'noplaylist': True,
-                'cookiefile': str(self.cookies_path),
+                'cookiefile': self._cookiefile(),
                 'cachedir': False,
                 'default_search': 'ytsearch',
-                'max_downloads': 1
+                'max_downloads': 1,
+                'js_runtimes': {'deno': {}}
             }
             with YoutubeDL(yt_dlp_options) as ytdlp:
                 info = ytdlp.extract_info(f"{video_query} lyrics", download=False)
@@ -84,11 +94,12 @@ class VideoSearcher():
                 'format': 'bestaudio/best',
                 'quiet': True,
                 'noplaylist': True,
-                'cookiefile': str(self.cookies_path),
+                'cookiefile': self._cookiefile(),
                 'cachedir': False,
                 'default_search': 'ytsearch10',
                 'ignoreerrors': True,
                 'extract_flat': 'in_playlist',
+                'js_runtimes': {'deno': {}}
             }
             with YoutubeDL(yt_dlp_options) as ytdlp:
                 info = ytdlp.extract_info(f"{video_query} lyrics", download=False)
@@ -112,8 +123,9 @@ class VideoSearcher():
                 'format': 'bestaudio/best',
                 'quiet': False,
                 'extract_flat': 'in_playlist',
-                'cookiefile': str(self.cookies_path),
-                'cachedir': False
+                'cookiefile': self._cookiefile(),
+                'cachedir': False,
+                'js_runtimes': {'deno': {}}
             }
             with YoutubeDL(yt_dlp_options) as ytdlp:
                 playlist = ytdlp.extract_info(playlist_url, download=False)
@@ -135,9 +147,10 @@ class VideoSearcher():
                 'format': 'bestaudio/best',
                 'quiet': False,
                 # 'extract_flat': 'in_playlist',
-                'cookiefile': str(self.cookies_path),
+                'cookiefile': self._cookiefile(),
                 'cachedir': False,
-                'ignoreerrors': True
+                'ignoreerrors': True,
+                'js_runtimes': {'deno': {}}
             }
             with YoutubeDL(yt_dlp_options) as ytdlp:
                 playlist = ytdlp.extract_info(playlist_url, download=False)

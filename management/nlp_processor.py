@@ -14,6 +14,8 @@ class NLPProcessor:
 
         if self.use_ai and self.api_key:
             self.client = genai.Client(api_key=self.api_key)
+            # for model in self.client.models.list():
+            #     print(model)
             logging.info("NLP Processor initialized with Gemini AI enabled.")
         else:
             if self.use_ai and not self.api_key:
@@ -60,7 +62,7 @@ User command: "{text}"
         """
         try:
             response = await self.client.aio.models.generate_content(
-                model='gemma-3-12b-it',
+                model='gemma-4-31b-it',
                 contents=prompt
             )
             # Remove any markdown formatting if present

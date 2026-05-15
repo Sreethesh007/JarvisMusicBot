@@ -335,16 +335,44 @@ class MusicController:
     async def startVoiceRecording(self):
         logging.debug("in voice recording")
 
-        # override the speech recognition to use google
         def process_wit(recognizer: sr.Recognizer, audio: sr.AudioData, user: Optional[str]) -> Optional[str]:
             text: Optional[str] = None
             try:
-                func = getattr(recognizer, 'recognize_google', recognizer.recognize_google)
-                text = func(audio)
+                use_whisper = os.getenv("USE_WHISPER_CPP", "False").lower() == "true"
+
+                if use_whisper:
+                    try:
+                        import numpy as np
+                        from pywhispercpp.model import Model
+
+                        # Initialize whisper model once. It handles model downloading automatically if needed.
+                        if not hasattr(self, '_whisper_model'):
+                            self._whisper_model = Model('base.en', print_realtime=False, print_progress=False)
+
+                        # Convert audio data to 16kHz float32 numpy array
+                        # SpeechRecognition audio data is standard PCM wav. We need float32 for whisper.cpp
+                        wav_data = audio.get_wav_data(convert_rate=16000, convert_width=2)
+
+                        # skip WAV header (44 bytes), interpret as int16, convert to float32
+                        audio_array = np.frombuffer(wav_data[44:], dtype=np.int16).astype(np.float32) / 32768.0
+
+                        # Use whisper.cpp to transcribe
+                        segments = self._whisper_model.transcribe(audio_array)
+
+                        text = "".join([segment.text for segment in segments]).strip()
+                    except Exception as e:
+                        logging.error(f"Whisper C++ recognition failed: {e}. Falling back to Google API.")
+                        text = recognizer.recognize_google(audio)
+                else:
+                    text = recognizer.recognize_google(audio)
+
                 # send the transcribed audio to an async event
-                asyncio.run_coroutine_threadsafe(self.handleTranscribedAudio(user, text), self.client.loop)
+                if text:
+                    asyncio.run_coroutine_threadsafe(self.handleTranscribedAudio(user, text), self.client.loop)
             except sr.UnknownValueError:
                 pass
+            except Exception as e:
+                logging.error(f"Error in speech recognition: {e}")
             return text
         
         voice_client = discord.utils.get(self.client.voice_clients, guild=self.guild)
@@ -451,7 +479,7 @@ class MusicController:
                 try:
                     tts_filename = f"tts_error_{self.guild.id}.mp3"
                     await self.generate_tts("Sorry, I don't understand.", tts_filename)
-                    tts_player = discord.FFmpegPCMAudio(tts_filename)
+                    tts_player = await self.client.loop.run_in_executor(None, lambda: discord.FFmpegPCMAudio(tts_filename))
 
                     def after_tts(error):
                         if error:
@@ -786,7 +814,7 @@ class MusicController:
                 song.link = result['link']
 
         # create the discord player for current song
-        player = discord.FFmpegOpusAudio(song.link, **ffmpeg_options)
+        player = await self.client.loop.run_in_executor(None, lambda: discord.FFmpegOpusAudio(song.link, **ffmpeg_options))
 
         # function to call after a song is done playing
         def after_playing(error):
@@ -829,7 +857,7 @@ class MusicController:
         try:
             tts_filename = f"tts_{self.guild.id}.mp3"
             await self.generate_tts(f"Playing {song.title}", tts_filename)
-            tts_player = discord.FFmpegPCMAudio(tts_filename)
+            tts_player = await self.client.loop.run_in_executor(None, lambda: discord.FFmpegPCMAudio(tts_filename))
             self.isPlayingTTS = True
             voice_client.play(tts_player, after=after_tts)
         except Exception as e:

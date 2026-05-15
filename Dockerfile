@@ -17,7 +17,6 @@ RUN apt-get update \
 WORKDIR /app
 
 COPY requirements.txt /app/requirements.txt
-COPY cookies.txt /app/data/cookies.txt
 
 RUN pip install --upgrade pip \
     && pip install --no-cache-dir -r /app/requirements.txt

@@ -342,28 +342,50 @@ class MusicController:
     # function to start the voice listening
     async def startVoiceRecording(self):
         def process_wit(recognizer: sr.Recognizer, audio: sr.AudioData, user: Optional[str]) -> Optional[str]:
-            def background_recognize():
-                try:
-                    text = recognizer.recognize_google(audio, language="en-IN")
-                    if text:
-                        asyncio.run_coroutine_threadsafe(self.handleTranscribedAudio(user, text), self.client.loop)
-                except sr.UnknownValueError:
-                    pass
-                except Exception as e:
-                    logging.error(f"Speech recognition error: {e}")
-            threading.Thread(target=background_recognize, daemon=True).start()
-            return None
-        
-        voice_client = discord.utils.get(self.client.voice_clients, guild=self.guild)
-        if not voice_client:
-            return
+        def background_recognize():
+            try:
+                text = recognizer.recognize_google(audio, language="en-IN")
+                if text:
+                    asyncio.run_coroutine_threadsafe(self.handleTranscribedAudio(user, text), self.client.loop)
+            except sr.UnknownValueError:
+                pass
+            except Exception as e:
+                logging.error(f"Speech recognition error: {e}")
+        threading.Thread(target=background_recognize, daemon=True).start()
+        return None
 
+    voice_client = discord.utils.get(self.client.voice_clients, guild=self.guild)
+    if not voice_client:
+        return
+
+    try:
+        if getattr(voice_client, 'is_listening', lambda: False)():
+            voice_client.stop_listening()
+        voice_client.listen(voice_recv.extras.speechrecognition.SpeechRecognitionSink(
+            process_cb=process_wit,
+            default_recognizer="google"
+        ))
+        # schedule a watchdog to restart listening if it dies
+        self.client.loop.create_task(self._voice_recv_watchdog(voice_client))
+    except Exception as e:
+        logging.exception(e)
+
+async def _voice_recv_watchdog(self, voice_client):
+    """Restarts voice_recv sink if it stops listening unexpectedly."""
+    await asyncio.sleep(10)  # give it time to settle
+    while True:
+        await asyncio.sleep(15)
         try:
-            if getattr(voice_client, 'is_listening', lambda: False)():
-                voice_client.stop_listening()
-            voice_client.listen(voice_recv.extras.speechrecognition.SpeechRecognitionSink(process_cb=process_wit, default_recognizer="google"))
+            if not voice_client.is_connected():
+                logging.debug("Watchdog: voice client disconnected, stopping watchdog.")
+                return
+            if not getattr(voice_client, 'is_listening', lambda: False)():
+                logging.warning("Watchdog: voice_recv stopped listening, restarting...")
+                await self.startVoiceRecording()
+                return  # new watchdog gets created by startVoiceRecording
         except Exception as e:
-            logging.exception(e)
+            logging.error(f"Watchdog error: {e}")
+            return
 
     # function to handle the transcribed audio for actual commands
     async def handleTranscribedAudio(self, user, text):

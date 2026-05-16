@@ -203,3 +203,6 @@ management/banned_users_list.json
 management/bot_keywords.json
 management/vip_users_list.json
 management/word_counters.json
+
+
+setup_jarvis_vm.ps1

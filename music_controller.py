@@ -835,7 +835,7 @@ class MusicController:
         # generate and play TTS first
         voice_client = discord.utils.get(self.client.voice_clients, guild=self.guild)
         try:
-            tts_title = ' '.join(song.title.split()[:3])
+            tts_title = ' '.join(song.title.split()[:6])
             tts_buffer = await self.generate_tts(f"Playing {tts_title}")
             tts_player = await self.client.loop.run_in_executor(
                 None,

@@ -1,4 +1,5 @@
 import discord
+import io
 import os
 import re
 import asyncio
@@ -63,9 +64,14 @@ class MusicController:
 
         return self.cached_bot_keywords
 
-    async def generate_tts(self, text: str, filename: str = "tts.mp3"):
+    async def generate_tts(self, text: str):
         communicate = edge_tts.Communicate(text, "en-IN-PrabhatNeural")
-        await communicate.save(filename)
+        audio_buffer = io.BytesIO()
+        async for chunk in communicate.stream():
+            if chunk["type"] == "audio":
+                audio_buffer.write(chunk["data"])
+        audio_buffer.seek(0)
+        return audio_buffer
 
     # function to check if the bot is currently connected to a voice channel
     def isConnectedToVC(self):
@@ -449,10 +455,11 @@ class MusicController:
             voice_client = discord.utils.get(self.client.voice_clients, guild=self.guild)
             if voice_client and not voice_client.is_playing() and not voice_client.is_paused():
                 try:
-                    tts_filename = f"tts_error_{self.guild.id}.mp3"
-                    await self.generate_tts("Sorry, I don't understand.", tts_filename)
-                    tts_player = await self.client.loop.run_in_executor(None, lambda: discord.FFmpegPCMAudio(tts_filename))
-
+                    tts_buffer = await self.generate_tts("Sorry, I don't understand.")
+                    tts_player = await self.client.loop.run_in_executor(
+                        None,
+                        lambda: discord.FFmpegPCMAudio(tts_buffer, pipe=True)
+                    )
                     def after_tts(error):
                         if error:
                             logging.error(f"Error during TTS playback: {error}")
@@ -828,9 +835,12 @@ class MusicController:
         # generate and play TTS first
         voice_client = discord.utils.get(self.client.voice_clients, guild=self.guild)
         try:
-            tts_filename = f"tts_{self.guild.id}.mp3"
-            await self.generate_tts(f"Playing {song.title}", tts_filename)
-            tts_player = await self.client.loop.run_in_executor(None, lambda: discord.FFmpegPCMAudio(tts_filename))
+            tts_title = ' '.join(song.title.split()[:3])
+            tts_buffer = await self.generate_tts(f"Playing {tts_title}")
+            tts_player = await self.client.loop.run_in_executor(
+                None,
+                lambda: discord.FFmpegPCMAudio(tts_buffer, pipe=True)
+            )
             self.isPlayingTTS = True
             voice_client.play(tts_player, after=after_tts)
         except Exception as e:

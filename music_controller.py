@@ -17,7 +17,6 @@ import speech_recognition as sr
 import logging
 import edge_tts
 from management.banned_users import BannedUsers
-from management.bot_keywords import BotKeywords
 from management.vip_users import VIPUsers
 from scripts.ytDLP import VideoSearcher, getSongExpiration
 from embed_views.music_buttons import MusicButtons
@@ -206,22 +205,10 @@ class MusicController:
         self.pause_start = None
         self.pause_duration = 0
         self.isPlayingTTS = False
-        self.cached_bot_keywords = None
-        self.bot_keywords_last_mtime = 0
         self.nlp_processor = NLPProcessor()
 
     async def _get_bot_keywords(self):
-        botKeywordsClass = BotKeywords()
-        try:
-            current_mtime = botKeywordsClass.bot_keywords_file.stat().st_mtime
-        except OSError:
-            current_mtime = 0
-
-        if self.cached_bot_keywords is None or self.bot_keywords_last_mtime != current_mtime:
-            self.cached_bot_keywords = await botKeywordsClass.loadBotKeywords()
-            self.bot_keywords_last_mtime = current_mtime
-
-        return self.cached_bot_keywords
+        return ["jarvis"]
 
     async def generate_tts(self, text: str, filename: str = "tts.mp3"):
         communicate = edge_tts.Communicate(text, "en-IN-PrabhatNeural")

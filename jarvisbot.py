@@ -15,14 +15,25 @@ from embed_views.search_view import SearchView
 from embed_views.keywords_view import KeywordsView
 
 # set up logging
+import sys
 logging.basicConfig(
     level=logging.INFO,  # Set logging level
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler(f"{Path(__file__).resolve().parent / 'bot_log.log'}", mode='w'),
-        logging.StreamHandler()
+        logging.FileHandler(f"{Path(__file__).resolve().parent / 'bot_log.log'}", mode='w', encoding='utf-8'),
+        logging.StreamHandler(stream=sys.stdout)
     ]
 )
+# Force stream handler to use utf-8 if possible
+for handler in logging.root.handlers:
+    if isinstance(handler, logging.StreamHandler) and not isinstance(handler, logging.FileHandler):
+        # We can't easily set encoding on an existing standard stream,
+        # but we can try to reconfigure it or just wrap it if needed.
+        # Actually in Python 3.7+ we can set sys.stdout.reconfigure(encoding='utf-8')
+        try:
+            sys.stdout.reconfigure(encoding='utf-8')
+        except AttributeError:
+            pass
 
 # block discords logging
 logging.getLogger("discord").setLevel(logging.WARNING)

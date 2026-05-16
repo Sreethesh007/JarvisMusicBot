@@ -451,7 +451,7 @@ class MusicController:
                 try:
                     tts_filename = f"tts_error_{self.guild.id}.mp3"
                     await self.generate_tts("Sorry, I don't understand.", tts_filename)
-                    tts_player = discord.FFmpegPCMAudio(tts_filename)
+                    tts_player = await self.client.loop.run_in_executor(None, lambda: discord.FFmpegPCMAudio(tts_filename))
 
                     def after_tts(error):
                         if error:
@@ -786,7 +786,8 @@ class MusicController:
                 song.link = result['link']
 
         # create the discord player for current song
-        player = discord.FFmpegOpusAudio(song.link, **ffmpeg_options)
+        # Offload synchronous Popen calls to prevent blocking event loop
+        player = await self.client.loop.run_in_executor(None, lambda: discord.FFmpegOpusAudio(song.link, **ffmpeg_options))
 
         # function to call after a song is done playing
         def after_playing(error):
@@ -829,7 +830,7 @@ class MusicController:
         try:
             tts_filename = f"tts_{self.guild.id}.mp3"
             await self.generate_tts(f"Playing {song.title}", tts_filename)
-            tts_player = discord.FFmpegPCMAudio(tts_filename)
+            tts_player = await self.client.loop.run_in_executor(None, lambda: discord.FFmpegPCMAudio(tts_filename))
             self.isPlayingTTS = True
             voice_client.play(tts_player, after=after_tts)
         except Exception as e:

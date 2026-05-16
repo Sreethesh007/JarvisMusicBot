@@ -5,6 +5,7 @@ import re
 import asyncio
 import time
 import random
+import threading
 from discord import app_commands
 from discord.ext import commands, voice_recv
 from typing import Optional, Tuple
@@ -18,6 +19,7 @@ from scripts.ytDLP import VideoSearcher, getSongExpiration
 from embed_views.music_buttons import MusicButtons
 from scripts.spotify import SpotifyController
 from management.nlp_processor import NLPProcessor
+            
 
 class Song:
     def __init__(self, title: str, url: str, link: str, thumbnail: str, duration: int, user: discord.User, isFile: bool):
@@ -339,19 +341,18 @@ class MusicController:
         
     # function to start the voice listening
     async def startVoiceRecording(self):
-        logging.debug("in voice recording")
-
-        # override the speech recognition to use google
         def process_wit(recognizer: sr.Recognizer, audio: sr.AudioData, user: Optional[str]) -> Optional[str]:
-            text: Optional[str] = None
-            try:
-                func = getattr(recognizer, 'recognize_google', recognizer.recognize_google)
-                text = func(audio)
-                # send the transcribed audio to an async event
-                asyncio.run_coroutine_threadsafe(self.handleTranscribedAudio(user, text), self.client.loop)
-            except sr.UnknownValueError:
-                pass
-            return text
+            def background_recognize():
+                try:
+                    text = recognizer.recognize_google(audio, language="en-IN")
+                    if text:
+                        asyncio.run_coroutine_threadsafe(self.handleTranscribedAudio(user, text), self.client.loop)
+                except sr.UnknownValueError:
+                    pass
+                except Exception as e:
+                    logging.error(f"Speech recognition error: {e}")
+            threading.Thread(target=background_recognize, daemon=True).start()
+            return None
         
         voice_client = discord.utils.get(self.client.voice_clients, guild=self.guild)
         if not voice_client:

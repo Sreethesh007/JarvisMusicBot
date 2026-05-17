@@ -341,19 +341,29 @@ class MusicController:
         
     # function to start the voice listening
     async def startVoiceRecording(self):
-        # Monkey-patch _add_ssrc to prevent event loop blocking
-        import discord.ext.voice_recv.voice_client as vr_vc
-        original_add_ssrc = vr_vc.VoiceRecvClient._add_ssrc
+        # Monkey-patch router methods to prevent event loop blocking on join/leave
+        import discord.ext.voice_recv.router as vr_router
+        original_set_user_id = vr_router.PacketRouter.set_user_id
+        original_destroy_decoder = vr_router.PacketRouter.destroy_decoder
 
-        def patched_add_ssrc(self_vc, user_id, ssrc, kind='audio'):
+        def patched_set_user_id(self_router, ssrc, user_id):
             def run():
                 try:
-                    original_add_ssrc(self_vc, user_id, ssrc, kind=kind)
+                    original_set_user_id(self_router, ssrc, user_id)
                 except Exception as e:
-                    logging.error(f"_add_ssrc error: {e}")
+                    logging.error(f"set_user_id error: {e}")
             threading.Thread(target=run, daemon=True).start()
 
-        vr_vc.VoiceRecvClient._add_ssrc = patched_add_ssrc
+        def patched_destroy_decoder(self_router, ssrc):
+            def run():
+                try:
+                    original_destroy_decoder(self_router, ssrc)
+                except Exception as e:
+                    logging.error(f"destroy_decoder error: {e}")
+            threading.Thread(target=run, daemon=True).start()
+
+        vr_router.PacketRouter.set_user_id = patched_set_user_id
+        vr_router.PacketRouter.destroy_decoder = patched_destroy_decoder
 
         def process_wit(recognizer: sr.Recognizer, audio: sr.AudioData, user: Optional[str]) -> Optional[str]:
             def background_recognize():
@@ -382,7 +392,7 @@ class MusicController:
             self.client.loop.create_task(self._voice_recv_watchdog(voice_client))
         except Exception as e:
             logging.exception(e)
-
+            
     async def _voice_recv_watchdog(self, voice_client):
         await asyncio.sleep(10)
         while True:

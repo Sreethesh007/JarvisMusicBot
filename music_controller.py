@@ -341,6 +341,20 @@ class MusicController:
         
     # function to start the voice listening
     async def startVoiceRecording(self):
+        # Monkey-patch _add_ssrc to prevent event loop blocking
+        import discord.ext.voice_recv.voice_client as vr_vc
+        original_add_ssrc = vr_vc.VoiceRecvClient._add_ssrc
+
+        def patched_add_ssrc(self_vc, user_id, ssrc, kind='audio'):
+            def run():
+                try:
+                    original_add_ssrc(self_vc, user_id, ssrc, kind=kind)
+                except Exception as e:
+                    logging.error(f"_add_ssrc error: {e}")
+            threading.Thread(target=run, daemon=True).start()
+
+        vr_vc.VoiceRecvClient._add_ssrc = patched_add_ssrc
+
         def process_wit(recognizer: sr.Recognizer, audio: sr.AudioData, user: Optional[str]) -> Optional[str]:
             def background_recognize():
                 try:
@@ -365,7 +379,6 @@ class MusicController:
                 process_cb=process_wit,
                 default_recognizer="google"
             ))
-            # schedule a watchdog to restart listening if it dies
             self.client.loop.create_task(self._voice_recv_watchdog(voice_client))
         except Exception as e:
             logging.exception(e)

@@ -384,21 +384,36 @@ class MusicController:
             logging.exception(e)
 
     async def _voice_recv_watchdog(self, voice_client):
-        """Restarts voice_recv sink if it stops listening unexpectedly."""
-        await asyncio.sleep(10)  # give it time to settle
-        while True:
-            await asyncio.sleep(15)
-            try:
-                if not voice_client.is_connected():
-                    logging.debug("Watchdog: voice client disconnected, stopping watchdog.")
-                    return
-                if not getattr(voice_client, 'is_listening', lambda: False)():
-                    logging.warning("Watchdog: voice_recv stopped listening, restarting...")
-                    await self.startVoiceRecording()
-                    return  # new watchdog gets created by startVoiceRecording
-            except Exception as e:
-                logging.error(f"Watchdog error: {e}")
+    """Restarts voice_recv sink and reconnects to VC if it stops listening unexpectedly."""
+    await asyncio.sleep(10)
+    while True:
+        await asyncio.sleep(15)
+        try:
+            if not voice_client.is_connected():
+                logging.debug("Watchdog: voice client disconnected, stopping watchdog.")
                 return
+            if not getattr(voice_client, 'is_listening', lambda: False)():
+                logging.warning("Watchdog: voice_recv stopped listening, fully reconnecting...")
+                voiceChannel = self.voiceChannel
+                textChannel = self.textChannel
+                # disconnect fully
+                try:
+                    voice_client.stop_listening()
+                except Exception:
+                    pass
+                try:
+                    await voice_client.disconnect(force=True)
+                except Exception:
+                    pass
+                await asyncio.sleep(2)
+                # reconnect from scratch
+                if voiceChannel and textChannel:
+                    await self.two_four_seven(voiceChannel, textChannel)
+                    logging.info(f"Watchdog: reconnected to {voiceChannel.name}")
+                return  # new watchdog spawned by two_four_seven → startVoiceRecording
+        except Exception as e:
+            logging.error(f"Watchdog error: {e}")
+            return
 
     # function to handle the transcribed audio for actual commands
     async def handleTranscribedAudio(self, user, text):

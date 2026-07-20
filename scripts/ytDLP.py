@@ -91,32 +91,22 @@ class VideoSearcher():
     def _extract_with_fallback(self, query: str, base_opts: dict, process_fn):
         """
         Two-pass extraction strategy:
-          1. Try WITHOUT cookies (works for most public videos)
-          2. If that fails and cookies are available, retry WITH cookies
+          1. Try WITH cookies first (stream URLs need auth to be playable by FFmpeg)
+          2. If cookies are missing/expired/fail, fall back to WITHOUT cookies
         
         process_fn: callable that takes the raw yt-dlp info dict and returns
                      the desired result structure.
         """
-        # --- Pass 1: Try without cookies ---
-        try:
-            with YoutubeDL(base_opts) as ytdlp:
-                info = ytdlp.extract_info(query, download=False)
-                result = process_fn(info)
-                logger.debug("Extraction succeeded without cookies.")
-                return result
-        except Exception as e1:
-            logger.debug("Cookieless extraction failed: %s", e1)
+        cookie_path = self._cookiefile()
+        has_cookies = cookie_path is not None
 
-            # --- Pass 2: Retry with cookies ---
-            cookie_path = self._cookiefile()
-            if not cookie_path:
-                logger.error("No cookies.txt found and cookieless extraction failed.")
-                raise e1
-
+        # --- Pass 1: Try with cookies (if available) ---
+        if has_cookies:
             if not self._has_valid_cookies():
                 logger.warning(
-                    "⚠️  Cookies may be expired — retrying anyway, but consider "
-                    "re-exporting cookies (incognito + robots.txt method)."
+                    "⚠️  Cookies may be expired — will try them anyway, then "
+                    "fall back to cookieless. Consider re-exporting cookies "
+                    "(incognito + robots.txt method)."
                 )
 
             opts_with_cookies = self._options_with_cookies(base_opts)
@@ -124,16 +114,29 @@ class VideoSearcher():
                 with YoutubeDL(opts_with_cookies) as ytdlp:
                     info = ytdlp.extract_info(query, download=False)
                     result = process_fn(info)
-                    logger.info("Extraction succeeded WITH cookies (fallback).")
+                    logger.debug("Extraction succeeded with cookies.")
                     return result
-            except Exception as e2:
-                logger.error(
-                    "Extraction failed both without and with cookies.\n"
-                    "  Without cookies: %s\n"
-                    "  With cookies: %s",
-                    e1, e2
-                )
-                raise e2
+            except Exception as e1:
+                logger.warning("Extraction with cookies failed: %s — trying without cookies.", e1)
+        else:
+            e1 = None
+            logger.debug("No cookies.txt found, going cookieless.")
+
+        # --- Pass 2: Fallback without cookies ---
+        try:
+            with YoutubeDL(base_opts) as ytdlp:
+                info = ytdlp.extract_info(query, download=False)
+                result = process_fn(info)
+                logger.info("Extraction succeeded WITHOUT cookies (fallback).")
+                return result
+        except Exception as e2:
+            logger.error(
+                "Extraction failed both with and without cookies.\n"
+                "  With cookies: %s\n"
+                "  Without cookies: %s",
+                e1, e2
+            )
+            raise e2
 
     async def getVideoInfoFromURL(self, video_url):
         loop = asyncio.get_running_loop()

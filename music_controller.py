@@ -831,7 +831,9 @@ class MusicController:
             return
 
         ffmpeg_options = {
-            'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
+            'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 '
+                              '-headers "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36\r\n'
+                              'Referer: https://www.youtube.com/\r\n"',
             'options': '-vn -filter:a "volume=0.7"'
         }
 
@@ -860,6 +862,29 @@ class MusicController:
         def after_playing(error):
             if error:
                 logging.error(f"Error during playback: {error}")
+                # Attempt to re-extract the stream URL and retry once
+                async def _retry_current_song():
+                    if not self.songQueue:
+                        return
+                    song = self.songQueue[0]
+                    if song.isFile:
+                        # Can't re-extract file URLs, just skip
+                        self.songQueue.pop(0)
+                        await self.playSong()
+                        return
+                    logging.info("Retrying: re-extracting stream URL after playback error")
+                    searcher = VideoSearcher()
+                    try:
+                        result = await searcher.getVideoInfoFromURL(song.url)
+                        song.link = result['link']
+                        await self.playSong()
+                    except Exception as e2:
+                        logging.error(f"Retry also failed: {e2}")
+                        await self.textChannel.send(f"Failed to play **{song.title}**, skipping.")
+                        self.songQueue.pop(0)
+                        await self.playSong()
+                fut = asyncio.run_coroutine_threadsafe(_retry_current_song(), self.client.loop)
+                fut.add_done_callback(lambda f: f.exception())
             else:
                 if self.isLooping:
                     logging.debug("Song finished, replaying previous song.")

@@ -819,7 +819,7 @@ class MusicController:
         await self.textChannel.send(embed=embed)
         return
         
-    async def playSong(self):
+    async def playSong(self, _retry=False):
         logging.debug("In playSong.")
 
         # check to make sure there is a song in queue
@@ -841,8 +841,9 @@ class MusicController:
         song = self.songQueue[0]
 
         if not song.isFile:
-            if getSongExpiration(song.link) <= int(time.time()):
-                logging.debug(f"Stream URL is expired. Fetching new one")
+            expiry = getSongExpiration(song.link)
+            if expiry is None or expiry <= int(time.time()) or _retry:
+                logging.debug(f"Stream URL expired or retry requested. Fetching new one")
                 # get the song info from the link
                 searcher = VideoSearcher()
                 try:
@@ -850,6 +851,10 @@ class MusicController:
                 except Exception as e:
                     logging.error(e)
                     await self.textChannel.send(f"Unable to add song: {e}")
+                    # Skip this song and move to next
+                    if self.songQueue:
+                        self.songQueue.pop(0)
+                    await self.playSong()
                     return
                 # update the current songs stream link
                 song.link = result['link']
@@ -862,29 +867,21 @@ class MusicController:
         def after_playing(error):
             if error:
                 logging.error(f"Error during playback: {error}")
-                # Attempt to re-extract the stream URL and retry once
-                async def _retry_current_song():
-                    if not self.songQueue:
-                        return
-                    song = self.songQueue[0]
-                    if song.isFile:
-                        # Can't re-extract file URLs, just skip
-                        self.songQueue.pop(0)
-                        await self.playSong()
-                        return
-                    logging.info("Retrying: re-extracting stream URL after playback error")
-                    searcher = VideoSearcher()
-                    try:
-                        result = await searcher.getVideoInfoFromURL(song.url)
-                        song.link = result['link']
-                        await self.playSong()
-                    except Exception as e2:
-                        logging.error(f"Retry also failed: {e2}")
+                if not _retry:
+                    # First failure: retry once with a fresh URL
+                    logging.info("Retrying playback with fresh stream URL...")
+                    fut = asyncio.run_coroutine_threadsafe(self.playSong(_retry=True), self.client.loop)
+                    fut.add_done_callback(lambda f: f.exception())
+                else:
+                    # Already retried once, skip this song
+                    logging.error(f"Retry also failed for '{song.title}', skipping.")
+                    async def _skip_and_continue():
                         await self.textChannel.send(f"Failed to play **{song.title}**, skipping.")
-                        self.songQueue.pop(0)
+                        if self.songQueue:
+                            self.songQueue.pop(0)
                         await self.playSong()
-                fut = asyncio.run_coroutine_threadsafe(_retry_current_song(), self.client.loop)
-                fut.add_done_callback(lambda f: f.exception())
+                    fut = asyncio.run_coroutine_threadsafe(_skip_and_continue(), self.client.loop)
+                    fut.add_done_callback(lambda f: f.exception())
             else:
                 if self.isLooping:
                     logging.debug("Song finished, replaying previous song.")

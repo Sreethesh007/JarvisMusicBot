@@ -62,7 +62,7 @@ class VideoSearcher():
                     'noplaylist': True,
                     'cookiefile': cookie_tmp,
                     'cachedir': False,
-                    'js_runtimes': {'deno': {}},
+                    'extractor_args': {'youtube': {'player_client': ['web']}},
                 }
                 with YoutubeDL(yt_dlp_options) as ytdlp:
                     info = ytdlp.extract_info(video_url, download=False)
@@ -94,7 +94,7 @@ class VideoSearcher():
                     'cachedir': False,
                     'default_search': 'ytsearch',
                     'max_downloads': 1,
-                    'js_runtimes': {'deno': {}}
+                    'extractor_args': {'youtube': {'player_client': ['web']}},
                 }
                 with YoutubeDL(yt_dlp_options) as ytdlp:
                     info = ytdlp.extract_info(f"{video_query} lyrics", download=False)
@@ -129,7 +129,7 @@ class VideoSearcher():
                     'default_search': 'ytsearch10',
                     'ignoreerrors': True,
                     'extract_flat': 'in_playlist',
-                    'js_runtimes': {'deno': {}}
+                    'extractor_args': {'youtube': {'player_client': ['web']}},
                 }
                 with YoutubeDL(yt_dlp_options) as ytdlp:
                     info = ytdlp.extract_info(f"{video_query} lyrics", download=False)
@@ -162,7 +162,7 @@ class VideoSearcher():
                     'extract_flat': 'in_playlist',
                     'cookiefile': cookie_tmp,
                     'cachedir': False,
-                    'js_runtimes': {'deno': {}}
+                    'extractor_args': {'youtube': {'player_client': ['web']}},
                 }
                 with YoutubeDL(yt_dlp_options) as ytdlp:
                     playlist = ytdlp.extract_info(playlist_url, download=False)
@@ -194,7 +194,7 @@ class VideoSearcher():
                     'cookiefile': cookie_tmp,
                     'cachedir': False,
                     'ignoreerrors': True,
-                    'js_runtimes': {'deno': {}}
+                    'extractor_args': {'youtube': {'player_client': ['web']}},
                 }
                 with YoutubeDL(yt_dlp_options) as ytdlp:
                     playlist = ytdlp.extract_info(playlist_url, download=False)

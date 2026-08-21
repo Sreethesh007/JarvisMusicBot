@@ -1,10 +1,31 @@
 import asyncio
 import re
 import os
+import logging
 from yt_dlp import YoutubeDL
 from dotenv import load_dotenv
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
+
+logger = logging.getLogger('ytdlp')
+
+class YtDlpLogger:
+    """Routes yt-dlp's internal messages through Python logging."""
+    def debug(self, msg):
+        # yt-dlp sends download progress and verbose info as debug
+        if msg.startswith('[debug] '):
+            logger.debug(msg)
+        else:
+            logger.info(msg)
+
+    def info(self, msg):
+        logger.info(msg)
+
+    def warning(self, msg):
+        logger.warning(msg)
+
+    def error(self, msg):
+        logger.error(msg)
 
 def getSongExpiration(url: str) -> int | None:
     parsed = urlparse(url)
@@ -42,11 +63,13 @@ class VideoSearcher():
         def extract_info():
             yt_dlp_options = {
                 'format': 'bestaudio/best',
-                'quiet': True,
+                'quiet': False,
+                'verbose': True,
                 'noplaylist': True,
                 'cookiefile': self._cookiefile(),
                 'cachedir': False,
                 'js_runtimes': {'deno': {}},
+                'logger': YtDlpLogger(),
             }
             with YoutubeDL(yt_dlp_options) as ytdlp:
                 info = ytdlp.extract_info(video_url, download=False)
@@ -55,6 +78,7 @@ class VideoSearcher():
                     'duration': int(info.get('duration') or 0),  # in seconds
                     'thumbnail': info.get('thumbnail'),
                     'link': info.get('url'),
+                    'http_headers': info.get('http_headers', {}),
                 }
 
         return await loop.run_in_executor(None, extract_info)
@@ -65,13 +89,15 @@ class VideoSearcher():
         def extract_info():
             yt_dlp_options = {
                 'format': 'bestaudio/best',
-                'quiet': True,
+                'quiet': False,
+                'verbose': True,
                 'noplaylist': True,
                 'cookiefile': self._cookiefile(),
                 'cachedir': False,
                 'default_search': 'ytsearch',
                 'max_downloads': 1,
-                'js_runtimes': {'deno': {}}
+                'js_runtimes': {'deno': {}},
+                'logger': YtDlpLogger(),
             }
             with YoutubeDL(yt_dlp_options) as ytdlp:
                 info = ytdlp.extract_info(f"{video_query} lyrics", download=False)
@@ -81,7 +107,8 @@ class VideoSearcher():
                     'duration': int(video.get('duration') or 0),
                     'thumbnail': video.get('thumbnail'),
                     'link': video.get('url'),
-                    'url': video.get('webpage_url')
+                    'url': video.get('webpage_url'),
+                    'http_headers': video.get('http_headers', {}),
                 }
 
         return await loop.run_in_executor(None, extract_info)
@@ -92,14 +119,16 @@ class VideoSearcher():
         def extract_info():
             yt_dlp_options = {
                 'format': 'bestaudio/best',
-                'quiet': True,
+                'quiet': False,
+                'verbose': True,
                 'noplaylist': True,
                 'cookiefile': self._cookiefile(),
                 'cachedir': False,
                 'default_search': 'ytsearch10',
                 'ignoreerrors': True,
                 'extract_flat': 'in_playlist',
-                'js_runtimes': {'deno': {}}
+                'js_runtimes': {'deno': {}},
+                'logger': YtDlpLogger(),
             }
             with YoutubeDL(yt_dlp_options) as ytdlp:
                 info = ytdlp.extract_info(f"{video_query} lyrics", download=False)
@@ -122,10 +151,12 @@ class VideoSearcher():
             yt_dlp_options = {
                 'format': 'bestaudio/best',
                 'quiet': False,
+                'verbose': True,
                 'extract_flat': 'in_playlist',
                 'cookiefile': self._cookiefile(),
                 'cachedir': False,
-                'js_runtimes': {'deno': {}}
+                'js_runtimes': {'deno': {}},
+                'logger': YtDlpLogger(),
             }
             with YoutubeDL(yt_dlp_options) as ytdlp:
                 playlist = ytdlp.extract_info(playlist_url, download=False)
@@ -146,11 +177,13 @@ class VideoSearcher():
             yt_dlp_options = {
                 'format': 'bestaudio/best',
                 'quiet': False,
+                'verbose': True,
                 # 'extract_flat': 'in_playlist',
                 'cookiefile': self._cookiefile(),
                 'cachedir': False,
                 'ignoreerrors': True,
-                'js_runtimes': {'deno': {}}
+                'js_runtimes': {'deno': {}},
+                'logger': YtDlpLogger(),
             }
             with YoutubeDL(yt_dlp_options) as ytdlp:
                 playlist = ytdlp.extract_info(playlist_url, download=False)
@@ -159,7 +192,8 @@ class VideoSearcher():
                     'duration': int(entry.get('duration') or 0),
                     'thumbnail': entry.get('thumbnail'),
                     'link': entry.get('url'),
-                    'url': entry.get('webpage_url')
+                    'url': entry.get('webpage_url'),
+                    'http_headers': entry.get('http_headers', {}),
                 } for entry in playlist.get('entries', [])
                   if entry
                 ]

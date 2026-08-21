@@ -265,12 +265,13 @@ async def removeAdmin(interaction: discord.Interaction, user: discord.User):
 @bot.tree.command(name='play', description='Play a Youtube, Spotify, or Soundcloud Song')
 async def play(interaction: discord.Interaction, query: str):
     logging.info(f"{interaction.user.name} has activated /play")
+    await interaction.response.defer(thinking=True)
 
     # check if user is banned
     bannedUsersClass = BannedUsers()
     bannedUsers = await bannedUsersClass.loadBannedUserIDs()
     if interaction.user.id in bannedUsers:
-        await interaction.response.send_message(f"User **{interaction.user.display_name}** is banned from the bot.")
+        await interaction.followup.send(f"User **{interaction.user.display_name}** is banned from the bot.")
         return
 
     # grab the music controller for designated guild
@@ -279,13 +280,17 @@ async def play(interaction: discord.Interaction, query: str):
     if not musicController.isConnectedToVC():
         # check if user is in a voice channel
         if not interaction.user.voice or not interaction.user.voice.channel:
-            await interaction.response.send_message("You or the Bot must be in a voice channel to use this command.")
+            await interaction.followup.send("You or the Bot must be in a voice channel to use this command.")
             return
         else:
-            await musicController.two_four_seven(interaction.user.voice.channel, interaction.channel)
+            try:
+                await musicController.two_four_seven(interaction.user.voice.channel, interaction.channel)
+            except Exception as e:
+                logging.error(f"Failed to connect to voice channel: {e}")
+                await interaction.followup.send("Failed to connect to the voice channel. Please try again.")
+                return
 
     # send initial response
-    await interaction.response.defer(thinking=True)
     await interaction.followup.send(f"Searching For Song...")
 
     # send the query to determine where the song comes from
@@ -297,12 +302,13 @@ async def play(interaction: discord.Interaction, query: str):
 @bot.tree.command(name='playfile', description='Plays an Audio File.')
 async def playfile(interaction: discord.Interaction, file: discord.Attachment):
     logging.info(f"{interaction.user.name} has activated /playfile")
+    await interaction.response.defer(thinking=True)
 
     # check if user is banned
     bannedUsersClass = BannedUsers()
     bannedUsers = await bannedUsersClass.loadBannedUserIDs()
     if interaction.user.id in bannedUsers:
-        await interaction.response.send_message(f"User **{interaction.user.display_name}** is banned from the bot.")
+        await interaction.followup.send(f"User **{interaction.user.display_name}** is banned from the bot.")
         return
 
     # grab the music controller for designated guild
@@ -311,13 +317,17 @@ async def playfile(interaction: discord.Interaction, file: discord.Attachment):
     if not musicController.isConnectedToVC():
         # check if user is in a voice channel
         if not interaction.user.voice or not interaction.user.voice.channel:
-            await interaction.response.send_message("You or the Bot must be in a voice channel to use this command.")
+            await interaction.followup.send("You or the Bot must be in a voice channel to use this command.")
             return
         else:
-            await musicController.two_four_seven(interaction.user.voice.channel, interaction.channel)
+            try:
+                await musicController.two_four_seven(interaction.user.voice.channel, interaction.channel)
+            except Exception as e:
+                logging.error(f"Failed to connect to voice channel: {e}")
+                await interaction.followup.send("Failed to connect to the voice channel. Please try again.")
+                return
 
     # send initial response
-    await interaction.response.defer(thinking=True)
     await interaction.followup.send(f"Downloading Audio File: {file.filename}")
 
     # send the attachment to the music controller

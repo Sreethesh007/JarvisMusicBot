@@ -22,7 +22,7 @@ from management.nlp_processor import NLPProcessor
             
 
 class Song:
-    def __init__(self, title: str, url: str, link: str, thumbnail: str, duration: int, user: discord.User, isFile: bool):
+    def __init__(self, title: str, url: str, link: str, thumbnail: str, duration: int, user: discord.User, isFile: bool, http_headers: dict = None):
         self.title = title
         self.url = url
         self.link = link
@@ -30,6 +30,7 @@ class Song:
         self.duration = duration
         self.user = user
         self.isFile = isFile
+        self.http_headers = http_headers or {}
 
 class MusicController:
     # Constructor
@@ -590,7 +591,7 @@ class MusicController:
             await self.textChannel.send(f"Unable to find song.")
             return
         # create a song object
-        youtubeSong = Song(result['title'], url, result['link'], result['thumbnail'], result['duration'], user, isFile=False)
+        youtubeSong = Song(result['title'], url, result['link'], result['thumbnail'], result['duration'], user, isFile=False, http_headers=result.get('http_headers'))
         # queue the song
         await self.queueSong(youtubeSong)
         return
@@ -626,7 +627,7 @@ class MusicController:
                 await self.textChannel.send(f"Unable to add song: {e}")
                 continue
             # create a song object and append it to the playlist
-            youtubeSong = Song(songInfo['title'], song['url'], songInfo['link'], songInfo['thumbnail'], songInfo['duration'], user, isFile=False)
+            youtubeSong = Song(songInfo['title'], song['url'], songInfo['link'], songInfo['thumbnail'], songInfo['duration'], user, isFile=False, http_headers=songInfo.get('http_headers'))
             # queue the song
             await self.queueSong(youtubeSong)
         return
@@ -650,7 +651,7 @@ class MusicController:
             await self.textChannel.send(f"Unable to find song.")
             return
         # create a song object
-        youtubeSong = Song(result['title'], result['url'], result['link'], result['thumbnail'], result['duration'], user, isFile=False)
+        youtubeSong = Song(result['title'], result['url'], result['link'], result['thumbnail'], result['duration'], user, isFile=False, http_headers=result.get('http_headers'))
         # queue the song
         await self.queueSong(youtubeSong)
         return
@@ -687,7 +688,7 @@ class MusicController:
                 await self.textChannel.send(f"Unable to add song: {e}")
                 continue
             # create a song object
-            youtubeSong = Song(songInfo['title'], songInfo['url'], songInfo['link'], songInfo['thumbnail'], songInfo['duration'], user, isFile=False)
+            youtubeSong = Song(songInfo['title'], songInfo['url'], songInfo['link'], songInfo['thumbnail'], songInfo['duration'], user, isFile=False, http_headers=songInfo.get('http_headers'))
             # queue the song
             await self.queueSong(youtubeSong)
         return
@@ -707,7 +708,7 @@ class MusicController:
             await self.textChannel.send(f"Unable to find song.")
             return
         # create a song object
-        soundcloudSong = Song(result['title'], url, result['link'], result['thumbnail'], result['duration'], user, isFile=False)
+        soundcloudSong = Song(result['title'], url, result['link'], result['thumbnail'], result['duration'], user, isFile=False, http_headers=result.get('http_headers'))
         # queue the song
         await self.queueSong(soundcloudSong)
         return
@@ -743,7 +744,7 @@ class MusicController:
                 await self.textChannel.send(f"Unable to add song: {e}")
                 continue
             # create a song object and append it to the playlist
-            soundcloudSong = Song(songInfo['title'], song['url'], songInfo['link'], songInfo['thumbnail'], songInfo['duration'], user, isFile=False)
+            soundcloudSong = Song(songInfo['title'], song['url'], songInfo['link'], songInfo['thumbnail'], songInfo['duration'], user, isFile=False, http_headers=songInfo.get('http_headers'))
             # queue the song
             await self.queueSong(soundcloudSong)
         return
@@ -763,7 +764,7 @@ class MusicController:
             await self.textChannel.send(f"Unable to find song.")
             return
         # create a song object
-        youtubeSong = Song(result['title'], result['url'], result['link'], result['thumbnail'], result['duration'], user, isFile=False)
+        youtubeSong = Song(result['title'], result['url'], result['link'], result['thumbnail'], result['duration'], user, isFile=False, http_headers=result.get('http_headers'))
         # queue the song
         await self.queueSong(youtubeSong)
         return
@@ -830,36 +831,65 @@ class MusicController:
             self.pause_start = None
             return
 
-        ffmpeg_options = {
-            'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
-            'options': '-vn -filter:a "volume=0.7"'
-        }
-
         # get the next song to play
         song = self.songQueue[0]
 
         if not song.isFile:
-            if getSongExpiration(song.link) <= int(time.time()):
-                logging.debug(f"Stream URL is expired. Fetching new one")
+            expiration = getSongExpiration(song.link)
+            now = int(time.time())
+            logging.info(f"[FFmpeg] Preparing to play: {song.title}")
+            logging.info(f"[FFmpeg] Stream URL expiration: {expiration}, current time: {now}, expires in: {expiration - now if expiration else 'N/A'}s")
+            logging.debug(f"[FFmpeg] Stream URL: {song.link[:120]}...")
+
+            if expiration and expiration <= now:
+                logging.warning(f"[FFmpeg] Stream URL is expired (by {now - expiration}s). Fetching new one")
                 # get the song info from the link
                 searcher = VideoSearcher()
                 try:
                     result = await searcher.getVideoInfoFromURL(song.url)
                 except Exception as e:
-                    logging.error(e)
+                    logging.error(f"[FFmpeg] Failed to refresh stream URL: {e}")
                     await self.textChannel.send(f"Unable to add song: {e}")
                     return
                 # update the current songs stream link
                 song.link = result['link']
+                song.http_headers = result.get('http_headers', {})
+                new_exp = getSongExpiration(song.link)
+                logging.info(f"[FFmpeg] New stream URL obtained, expires in: {new_exp - now if new_exp else 'N/A'}s")
+
+        # Build FFmpeg headers from yt-dlp's http_headers to avoid YouTube blocking
+        header_str = ''
+        if not song.isFile and song.http_headers:
+            header_lines = ''.join(f'{k}: {v}\r\n' for k, v in song.http_headers.items())
+            header_str = f' -headers "{header_lines}"'
+
+        ffmpeg_options = {
+            'before_options': f'-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -loglevel warning{header_str}',
+            'options': '-vn -filter:a "volume=0.7"'
+        }
 
         # create the discord player for current song
         # Offload synchronous Popen calls to prevent blocking event loop
+        logging.info(f"[FFmpeg] Creating FFmpegOpusAudio player for: {song.title}")
         player = await self.client.loop.run_in_executor(None, lambda: discord.FFmpegOpusAudio(song.link, **ffmpeg_options))
 
         # function to call after a song is done playing
         def after_playing(error):
             if error:
-                logging.error(f"Error during playback: {error}")
+                error_str = str(error)
+                logging.error(f"[FFmpeg] Playback error for '{song.title}': {error_str}")
+                # Try to extract and interpret the exit code
+                import re as _re
+                code_match = _re.search(r'code (\d+)', error_str)
+                if code_match:
+                    code = int(code_match.group(1))
+                    # Interpret as signed 32-bit for Windows
+                    if code > 0x7FFFFFFF:
+                        signed = code - 0x100000000
+                        logging.error(f"[FFmpeg] Exit code {code} (signed: {signed}, hex: 0x{code:08X})")
+                    else:
+                        logging.error(f"[FFmpeg] Exit code {code} (hex: 0x{code:08X})")
+                logging.error(f"[FFmpeg] Song URL: {song.url}, isFile: {song.isFile}")
             else:
                 if self.isLooping:
                     logging.debug("Song finished, replaying previous song.")

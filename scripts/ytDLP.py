@@ -160,13 +160,35 @@ class VideoSearcher():
             }
             with YoutubeDL(yt_dlp_options) as ytdlp:
                 playlist = ytdlp.extract_info(playlist_url, download=False)
+                entries = playlist.get('entries', []) or []
                 metadata = {
                     'playlist_name': re.sub(r'[^\w\s\-]', '', playlist.get('title', 'Unknown Playlist')),
-                    'song_count': len(playlist.get('entries', [])),
-                    'thumbnail': playlist.get('thumbnail') or (playlist.get('thumbnails', [{}])[0].get('url') if 'thumbnails' in playlist else None)
+                    'song_count': len(entries),
+                    'thumbnail': playlist.get('thumbnail') or (playlist.get('thumbnails', [{}])[0].get('url') if playlist.get('thumbnails') else None)
                 }
-                song_urls = [{'url': entry.get('url')} for entry in playlist.get('entries', []) if entry.get('url')]
-                return [metadata] + song_urls
+
+                song_entries = []
+                for entry in entries:
+                    if not entry:
+                        continue
+                    url = entry.get('url') or entry.get('webpage_url')
+                    if url and not url.startswith('http'):
+                        url = f"https://www.youtube.com/watch?v={url}"
+                    elif not url and entry.get('id'):
+                        url = f"https://www.youtube.com/watch?v={entry.get('id')}"
+                    
+                    if not url:
+                        continue
+
+                    thumb = entry.get('thumbnail') or (entry.get('thumbnails', [{}])[0].get('url') if entry.get('thumbnails') else None)
+                    song_entries.append({
+                        'title': re.sub(r'[^\w\s\-]', '', entry.get('title', 'Unknown Track')),
+                        'url': url,
+                        'duration': int(entry.get('duration') or 0),
+                        'thumbnail': thumb or metadata['thumbnail']
+                    })
+
+                return [metadata] + song_entries
 
         return await loop.run_in_executor(None, extract_info)
     

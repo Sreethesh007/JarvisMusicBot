@@ -97,30 +97,59 @@ class SpotifyController:
             access_token = await self.get_access_token()
             headers = {"Authorization": f"Bearer {access_token}"}
 
-            async def fetch_items():
+            async def fetch_all():
+                nonlocal headers
                 async with session.get(endpoint, headers=headers) as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        title = data.get('name')
-                        thumbnail = data['images'][0]['url'] if data.get('images') else None
-                        items = data.get('tracks', {}).get('items', []) if 'playlist' in endpoint else data.get('tracks', {}).get('items', [])
-                        track_list = [
-                            {
-                                'title': item['track']['name'] if 'playlist' in endpoint else item['name'],
-                                'artist': item['track']['artists'][0]['name'] if 'playlist' in endpoint else item['artists'][0]['name']
-                            }
-                            for item in items if item.get('track') or item.get('name')
-                        ]
-                        return [{'title': title, 'thumbnail': thumbnail}] + track_list
-                    return None
+                    if resp.status != 200:
+                        return None
+                    data = await resp.json()
 
-            result = await fetch_items()
+                title = data.get('name', 'Unknown Playlist')
+                thumbnail = data['images'][0]['url'] if data.get('images') else None
+                tracks_data = data.get('tracks', {})
+                items = list(tracks_data.get('items', []))
+                next_url = tracks_data.get('next')
+
+                # Paginate through remaining tracks
+                while next_url:
+                    async with session.get(next_url, headers=headers) as resp:
+                        if resp.status == 200:
+                            page_data = await resp.json()
+                            items.extend(page_data.get('items', []))
+                            next_url = page_data.get('next')
+                        elif resp.status == 401:
+                            token = await self.refresh_token()
+                            headers = {"Authorization": f"Bearer {token}"}
+                            continue
+                        else:
+                            break
+
+                track_list = []
+                is_playlist = 'playlist' in endpoint
+                for item in items:
+                    if not item:
+                        continue
+                    track_obj = item.get('track') if is_playlist else item
+                    if not track_obj or not track_obj.get('name'):
+                        continue
+                    
+                    artists = track_obj.get('artists', [])
+                    artist_name = artists[0].get('name', 'Unknown Artist') if artists else 'Unknown Artist'
+                    track_list.append({
+                        'title': track_obj.get('name'),
+                        'artist': artist_name
+                    })
+
+                return [{'title': title, 'thumbnail': thumbnail}] + track_list
+
+            result = await fetch_all()
             if result is not None:
                 return result
 
+            # If first attempt fails, try to refresh token once
             access_token = await self.refresh_token()
             headers = {"Authorization": f"Bearer {access_token}"}
-            result = await fetch_items()
+            result = await fetch_all()
 
             if result is not None:
                 return result

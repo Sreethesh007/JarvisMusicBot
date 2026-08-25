@@ -33,7 +33,7 @@ class NLPProcessor:
             try:
                 return await self.process_ai_intent(text)
             except Exception as e:
-                logging.error(f"AI Intent extraction failed: {e}. Falling back to local.")
+                logging.error(f"[NLP AI] AI Intent extraction failed for text '{text}': {e}. Falling back to local intent matching.", exc_info=True)
                 return self.process_local_intent(text)
         else:
             return self.process_local_intent(text)

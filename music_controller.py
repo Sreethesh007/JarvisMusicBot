@@ -22,7 +22,7 @@ from management.nlp_processor import NLPProcessor
             
 
 class Song:
-    def __init__(self, title: str, url: str, link: str, thumbnail: str, duration: int, user: discord.User, isFile: bool, http_headers: dict = None):
+    def __init__(self, title: str, url: str, link: str, thumbnail: str, duration: int, user: discord.User, isFile: bool, http_headers: dict = None, source_command: str = None):
         self.title = title
         self.url = url
         self.link = link
@@ -31,6 +31,7 @@ class Song:
         self.user = user
         self.isFile = isFile
         self.http_headers = http_headers or {}
+        self.source_command = source_command or f"Requested by {user.display_name if user else 'Unknown'}"
 
 class MusicController:
     # Constructor
@@ -53,6 +54,7 @@ class MusicController:
         self.cached_bot_keywords = None
         self.bot_keywords_last_mtime = 0
         self.nlp_processor = NLPProcessor()
+        self.current_context = None
 
     async def _get_bot_keywords(self):
         botKeywordsClass = BotKeywords()
@@ -161,12 +163,13 @@ class MusicController:
         try:
             result = await searcher.getSearchResults(query)
         except Exception as e:
-            logging.error(e)
+            logging.error(f"[yt-dlp] Search failed for query '{query}' [{self.current_context or 'Unknown context'}]: {e}", exc_info=True)
             await self.textChannel.send(f"Unable to search for songs: {e}")
             return
         # check if result came back successfully
         if not result:
-            await self.textChannel.send(f"Unable to search for songs: {e}")
+            logging.error(f"[yt-dlp] No search results returned for query '{query}' [{self.current_context or 'Unknown context'}]")
+            await self.textChannel.send(f"No results found for '{query}'.")
             return
         return result
 
@@ -375,7 +378,8 @@ class MusicController:
                 except sr.UnknownValueError:
                     pass
                 except Exception as e:
-                    logging.error(f"Speech recognition error: {e}")
+                    user_name = getattr(user, 'display_name', str(user))
+                    logging.error(f"[SpeechRecognition] Error recognizing speech from {user_name}: {e}", exc_info=True)
             threading.Thread(target=background_recognize, daemon=True).start()
             return None
 
@@ -392,7 +396,7 @@ class MusicController:
             ))
             self.client.loop.create_task(self._voice_recv_watchdog(voice_client))
         except Exception as e:
-            logging.exception(e)
+            logging.error(f"[voice_recv] Failed to start voice listening: {e}", exc_info=True)
             
     async def _voice_recv_watchdog(self, voice_client):
         await asyncio.sleep(10)
@@ -422,112 +426,121 @@ class MusicController:
                         logging.info(f"Watchdog: reconnected to {voiceChannel.name}")
                     return  # new watchdog spawned by two_four_seven → startVoiceRecording
             except Exception as e:
-                logging.error(f"Watchdog error: {e}")
+                logging.error(f"[Watchdog] Error in voice_recv watchdog: {e}", exc_info=True)
                 return
 
     # function to handle the transcribed audio for actual commands
     async def handleTranscribedAudio(self, user, text):
+        self.current_context = f"Voice Command: '{text}' by {user.display_name} (ID: {user.id})"
         logging.info(f"{user.display_name}: {text}")
         if self.transcriptionChannel:
-            await self.transcriptionChannel.send(f"**{user.display_name}**: {text}")
+            try:
+                await self.transcriptionChannel.send(f"**{user.display_name}**: {text}")
+            except Exception as e:
+                logging.error(f"Failed to send transcription message [{self.current_context}]: {e}", exc_info=True)
 
         if not text.strip():
             logging.debug(f"text is empty. Doing nothing")
             return
 
-        # Clean up punctuation from the transcribed text
-        text = re.sub(r'[^\w\s]', '', text)
-        
-        botKeywords = await self._get_bot_keywords()
+        try:
+            # Clean up punctuation from the transcribed text
+            clean_text = re.sub(r'[^\w\s]', '', text)
+            
+            botKeywords = await self._get_bot_keywords()
 
-        # Check if the bot was mentioned
-        if not any(word in text.lower() for word in botKeywords):
-            return
-
-        # capture the remainder after the bot name
-        match = re.search(r"(?:{})\s+(.+)".format("|".join(re.escape(k) for k in botKeywords)), text, re.IGNORECASE)
-        if not match:
-            logging.debug("No command keyword found after bot name")
-            return
-
-        raw_command = match.group(1).lower().strip()
-
-        bannedUsersClass = BannedUsers()
-        bannedUsers = await bannedUsersClass.loadBannedUserIDs()
-        if user.id in bannedUsers:
-            await self.textChannel.send(f"User **{user.display_name}** is banned from the bot.")
-            return
-
-        intent, query = await self.nlp_processor.determine_intent(raw_command)
-
-        logging.info(f"NLP determined intent: {intent}, query: {query}")
-
-        if intent == 'play':
-            if not query:
-                # If no query is found, assume they meant to just resume
-                await self.textChannel.send(f"Voice Activated - Resuming Song")
-                await self.resumeSong()
-            else:
-                await self.textChannel.send(f"Voice Activated - Searching for song: {query}")
-                await self.handleYoutubeSearch(user, query)
-        elif intent == 'pause':
-            if self.isConnectedToVC():
-                voice_client = discord.utils.get(self.client.voice_clients, guild=self.guild)
-                if voice_client and not voice_client.is_paused():
-                    await self.textChannel.send(f"Voice Activated - Pausing Song")
-                else:
-                    await self.textChannel.send(f"Voice Activated - Resuming Song")
-                await self.pauseSong()
-        elif intent == 'resume':
-            if self.isConnectedToVC():
-                await self.textChannel.send(f"Voice Activated - Resuming Song")
-                await self.resumeSong()
-        elif intent == 'skip':
-            if self.isConnectedToVC():
-                if not self.isMajorityVote:
-                    await self.textChannel.send(f"Voice Activated - Skipping Song")
-                await self.skipSong()
-        elif intent == 'stop':
-            if self.isConnectedToVC():
-                if not self.isMajorityVote:
-                    await self.textChannel.send(f"Voice Activated - Stopping Song and clearing queue")
-                await self.stopAllSongs()
-        elif intent == 'loop':
-            if self.isConnectedToVC():
-                if await self.setLooping():
-                    await self.textChannel.send(f"Voice Activated - Looping Enabled")
-                else:
-                    await self.textChannel.send(f"Voice Activated - Looping Disabled")
-        elif intent == 'disconnect':
-            # Only VIP users (including OWNER) can disconnect via voice keyword
-            vipUsersClass = VIPUsers()
-            vipUsers = await vipUsersClass.loadVIPUserIDs()
-            if user.id not in vipUsers:
-                if self.textChannel:
-                    await self.textChannel.send(f"Only admins can disconnect the bot.")
+            # Check if the bot was mentioned
+            if not any(word in clean_text.lower() for word in botKeywords):
                 return
 
-            if self.isConnectedToVC():
-                await self.textChannel.send(f"Voice Activated - Disconnecting from voice channel")
-                await self.hardDisconnect()
-        else:
-            await self.textChannel.send("Sorry, I don't understand.")
-            # optionally add TTS to say sorry
-            voice_client = discord.utils.get(self.client.voice_clients, guild=self.guild)
-            if voice_client and not voice_client.is_playing() and not voice_client.is_paused():
-                try:
-                    tts_buffer = await self.generate_tts("Sorry, I don't understand.")
-                    tts_player = await self.client.loop.run_in_executor(
-                        None,
-                        lambda: discord.FFmpegPCMAudio(tts_buffer, pipe=True)
-                    )
-                    def after_tts(error):
-                        if error:
-                            logging.error(f"Error during TTS playback: {error}")
+            # capture the remainder after the bot name
+            match = re.search(r"(?:{})\s+(.+)".format("|".join(re.escape(k) for k in botKeywords)), clean_text, re.IGNORECASE)
+            if not match:
+                logging.debug("No command keyword found after bot name")
+                return
 
-                    voice_client.play(tts_player, after=after_tts)
-                except Exception as e:
-                    logging.error(f"Failed to play error TTS: {e}")
+            raw_command = match.group(1).lower().strip()
+
+            bannedUsersClass = BannedUsers()
+            bannedUsers = await bannedUsersClass.loadBannedUserIDs()
+            if user.id in bannedUsers:
+                await self.textChannel.send(f"User **{user.display_name}** is banned from the bot.")
+                return
+
+            intent, query = await self.nlp_processor.determine_intent(raw_command)
+
+            logging.info(f"NLP determined intent: {intent}, query: {query}")
+
+            if intent == 'play':
+                if not query:
+                    # If no query is found, assume they meant to just resume
+                    await self.textChannel.send(f"Voice Activated - Resuming Song")
+                    await self.resumeSong()
+                else:
+                    await self.textChannel.send(f"Voice Activated - Searching for song: {query}")
+                    await self.handleYoutubeSearch(user, query)
+            elif intent == 'pause':
+                if self.isConnectedToVC():
+                    voice_client = discord.utils.get(self.client.voice_clients, guild=self.guild)
+                    if voice_client and not voice_client.is_paused():
+                        await self.textChannel.send(f"Voice Activated - Pausing Song")
+                    else:
+                        await self.textChannel.send(f"Voice Activated - Resuming Song")
+                    await self.pauseSong()
+            elif intent == 'resume':
+                if self.isConnectedToVC():
+                    await self.textChannel.send(f"Voice Activated - Resuming Song")
+                    await self.resumeSong()
+            elif intent == 'skip':
+                if self.isConnectedToVC():
+                    if not self.isMajorityVote:
+                        await self.textChannel.send(f"Voice Activated - Skipping Song")
+                    await self.skipSong()
+            elif intent == 'stop':
+                if self.isConnectedToVC():
+                    if not self.isMajorityVote:
+                        await self.textChannel.send(f"Voice Activated - Stopping Song and clearing queue")
+                    await self.stopAllSongs()
+            elif intent == 'loop':
+                if self.isConnectedToVC():
+                    if await self.setLooping():
+                        await self.textChannel.send(f"Voice Activated - Looping Enabled")
+                    else:
+                        await self.textChannel.send(f"Voice Activated - Looping Disabled")
+            elif intent == 'disconnect':
+                # Only VIP users (including OWNER) can disconnect via voice keyword
+                vipUsersClass = VIPUsers()
+                vipUsers = await vipUsersClass.loadVIPUserIDs()
+                if user.id not in vipUsers:
+                    if self.textChannel:
+                        await self.textChannel.send(f"Only admins can disconnect the bot.")
+                    return
+
+                if self.isConnectedToVC():
+                    await self.textChannel.send(f"Voice Activated - Disconnecting from voice channel")
+                    await self.hardDisconnect()
+            else:
+                await self.textChannel.send("Sorry, I don't understand.")
+                # optionally add TTS to say sorry
+                voice_client = discord.utils.get(self.client.voice_clients, guild=self.guild)
+                if voice_client and not voice_client.is_playing() and not voice_client.is_paused():
+                    try:
+                        tts_buffer = await self.generate_tts("Sorry, I don't understand.")
+                        tts_player = await self.client.loop.run_in_executor(
+                            None,
+                            lambda: discord.FFmpegPCMAudio(tts_buffer, pipe=True)
+                        )
+                        def after_tts(error):
+                            if error:
+                                logging.error(f"[TTS] Error during apology TTS playback [{self.current_context}]: {error}", exc_info=True)
+
+                        voice_client.play(tts_player, after=after_tts)
+                    except Exception as e:
+                        logging.error(f"[TTS] Failed to play error TTS [{self.current_context}]: {e}", exc_info=True)
+        except Exception as e:
+            logging.error(f"Error processing voice command '{text}' from {user.display_name} [{self.current_context}]: {e}", exc_info=True)
+            if self.textChannel:
+                await self.textChannel.send(f"An error occurred while processing voice command: '{text}'")
 
         return
 
@@ -535,14 +548,17 @@ class MusicController:
     
     async def handleFile(self, user: discord.User, file: discord.Attachment):
         logging.debug(f"In handleFile")
+        source_command = self.current_context or f"File upload '{file.filename}' by {user.display_name}"
         # create a song object
-        fileSong = Song(file.filename, file.url, file.url, self.client.user.avatar.url, 0, user, isFile=True)
+        fileSong = Song(file.filename, file.url, file.url, self.client.user.avatar.url, 0, user, isFile=True, source_command=source_command)
         # queue the song
         await self.queueSong(fileSong)
         return
     
     async def determineSongSource(self, user: discord.User, query: str):
         logging.debug(f"In Determine Song Source")
+        if not self.current_context:
+            self.current_context = f"Command by {user.display_name} (ID: {user.id}) query: '{query}'"
         query_lower = query.lower()
 
         # Regex patterns
@@ -583,15 +599,17 @@ class MusicController:
         try:
             result = await searcher.getVideoInfoFromURL(url)
         except Exception as e:
-            logging.error(e)
+            logging.error(f"[yt-dlp] Error extracting YouTube URL '{url}' [{self.current_context}]: {e}", exc_info=True)
             await self.textChannel.send(f"Unable to add song: {e}")
             return
         # check if result came back successfully
         if not result:
+            logging.error(f"[yt-dlp] No video info found for YouTube URL '{url}' [{self.current_context}]")
             await self.textChannel.send(f"Unable to find song.")
             return
+        source_command = self.current_context or f"YouTube URL '{url}' by {user.display_name}"
         # create a song object
-        youtubeSong = Song(result['title'], url, result['link'], result['thumbnail'], result['duration'], user, isFile=False, http_headers=result.get('http_headers'))
+        youtubeSong = Song(result['title'], url, result['link'], result['thumbnail'], result['duration'], user, isFile=False, http_headers=result.get('http_headers'), source_command=source_command)
         # queue the song
         await self.queueSong(youtubeSong)
         return
@@ -600,9 +618,15 @@ class MusicController:
         logging.debug("In handleYoutubePlaylist")
         # get the playlist info from the youtube link
         searcher = VideoSearcher()
-        result = await searcher.getPlaylistInfo(url)
+        try:
+            result = await searcher.getPlaylistInfo(url)
+        except Exception as e:
+            logging.error(f"[yt-dlp] Error extracting YouTube playlist '{url}' [{self.current_context}]: {e}", exc_info=True)
+            await self.textChannel.send(f"Unable to find playlist: {e}")
+            return
         # check if result came back successfully
         if not result:
+            logging.error(f"[yt-dlp] No playlist info returned for YouTube playlist '{url}' [{self.current_context}]")
             await self.textChannel.send(f"Unable to find playlist.")
             return
         # get the playlist name and the number of songs
@@ -617,17 +641,18 @@ class MusicController:
         embed.add_field(name="Playlist Name", value=metadata['playlist_name'], inline=False)
         embed.add_field(name="# of Songs", value=metadata['song_count'], inline=False)
         await self.textChannel.send(embed=embed)
+        source_command = self.current_context or f"YouTube Playlist '{url}' by {user.display_name}"
         for song in result:
             logging.debug(f"Searching for {song['url']}")
             try:
                 # grab the video info for each song in the playlist
                 songInfo = await searcher.getVideoInfoFromURL(song['url'])
             except Exception as e:
-                logging.error(e)
+                logging.error(f"[yt-dlp] Error extracting track '{song['url']}' in playlist '{url}' [{self.current_context}]: {e}", exc_info=True)
                 await self.textChannel.send(f"Unable to add song: {e}")
                 continue
             # create a song object and append it to the playlist
-            youtubeSong = Song(songInfo['title'], song['url'], songInfo['link'], songInfo['thumbnail'], songInfo['duration'], user, isFile=False, http_headers=songInfo.get('http_headers'))
+            youtubeSong = Song(songInfo['title'], song['url'], songInfo['link'], songInfo['thumbnail'], songInfo['duration'], user, isFile=False, http_headers=songInfo.get('http_headers'), source_command=source_command)
             # queue the song
             await self.queueSong(youtubeSong)
         return
@@ -635,7 +660,12 @@ class MusicController:
     async def handleSpotifyLink(self, user, url):
         logging.debug("In handleSpotifyLink")
         # get the name and artist of song from spotify API
-        spotifySongInfo = await self.spotify.getSpotifySongInfo(url)
+        try:
+            spotifySongInfo = await self.spotify.getSpotifySongInfo(url)
+        except Exception as e:
+            logging.error(f"[Spotify] Failed to fetch Spotify track info for '{url}' [{self.current_context}]: {e}", exc_info=True)
+            await self.textChannel.send(f"Unable to add Spotify song: {e}")
+            return
         query = f"{spotifySongInfo['title']} by {spotifySongInfo['artist']}"
         logging.debug(f"searching for spotify song: {query}")
         # get the song info from the youtube search query
@@ -643,15 +673,17 @@ class MusicController:
         try:
             result = await searcher.getVideoInfoFromQuery(query)
         except Exception as e:
-            logging.error(e)
+            logging.error(f"[yt-dlp] Failed to search YouTube for Spotify track '{query}' [{self.current_context}]: {e}", exc_info=True)
             await self.textChannel.send(f"Unable to add song: {e}")
             return
         # check if result came back successfully
         if not result:
+            logging.error(f"[yt-dlp] No YouTube video found for Spotify track '{query}' [{self.current_context}]")
             await self.textChannel.send(f"Unable to find song.")
             return
+        source_command = self.current_context or f"Spotify Track '{url}' by {user.display_name}"
         # create a song object
-        youtubeSong = Song(result['title'], result['url'], result['link'], result['thumbnail'], result['duration'], user, isFile=False, http_headers=result.get('http_headers'))
+        youtubeSong = Song(result['title'], result['url'], result['link'], result['thumbnail'], result['duration'], user, isFile=False, http_headers=result.get('http_headers'), source_command=source_command)
         # queue the song
         await self.queueSong(youtubeSong)
         return
@@ -659,9 +691,15 @@ class MusicController:
     async def handleSpotifyPlaylist(self, user, playlist):
         logging.debug("In handleSpotifyPlaylist")
         # get the playlist info from spotify API
-        result = await self.spotify.getSpotifyPlaylistInfo(playlist)
+        try:
+            result = await self.spotify.getSpotifyPlaylistInfo(playlist)
+        except Exception as e:
+            logging.error(f"[Spotify] Failed to fetch Spotify playlist/album '{playlist}' [{self.current_context}]: {e}", exc_info=True)
+            await self.textChannel.send(f"Unable to find spotify playlist/album: {e}")
+            return
         # check if result came back successfully
         if not result:
+            logging.error(f"[Spotify] No tracks found in Spotify playlist/album '{playlist}' [{self.current_context}]")
             await self.textChannel.send(f"Unable to find spotify playlist/album.")
             return
         # get the playlist name, number of songs, and thumbnail
@@ -677,6 +715,7 @@ class MusicController:
         embed.add_field(name="# of Songs", value=len(result), inline=False)
         await self.textChannel.send(embed=embed)
         searcher = VideoSearcher()
+        source_command = self.current_context or f"Spotify Playlist '{playlist}' by {user.display_name}"
         for song in result:
             query = f"{song['title']} by {song['artist']}"
             logging.debug(f"Searching for {query}")
@@ -684,11 +723,11 @@ class MusicController:
                 # grab the video info for each song in the playlist
                 songInfo = await searcher.getVideoInfoFromQuery(query)
             except Exception as e:
-                logging.error(e)
+                logging.error(f"[yt-dlp] Failed to search YouTube for track '{query}' in Spotify playlist [{self.current_context}]: {e}", exc_info=True)
                 await self.textChannel.send(f"Unable to add song: {e}")
                 continue
             # create a song object
-            youtubeSong = Song(songInfo['title'], songInfo['url'], songInfo['link'], songInfo['thumbnail'], songInfo['duration'], user, isFile=False, http_headers=songInfo.get('http_headers'))
+            youtubeSong = Song(songInfo['title'], songInfo['url'], songInfo['link'], songInfo['thumbnail'], songInfo['duration'], user, isFile=False, http_headers=songInfo.get('http_headers'), source_command=source_command)
             # queue the song
             await self.queueSong(youtubeSong)
         return
@@ -700,15 +739,17 @@ class MusicController:
         try:
             result = await searcher.getVideoInfoFromURL(url)
         except Exception as e:
-            logging.error(e)
+            logging.error(f"[SoundCloud] Failed to extract SoundCloud track '{url}' [{self.current_context}]: {e}", exc_info=True)
             await self.textChannel.send(f"Unable to add song: {e}")
             return
         # check if result came back successfully
         if not result:
+            logging.error(f"[SoundCloud] No info returned for SoundCloud track '{url}' [{self.current_context}]")
             await self.textChannel.send(f"Unable to find song.")
             return
+        source_command = self.current_context or f"SoundCloud URL '{url}' by {user.display_name}"
         # create a song object
-        soundcloudSong = Song(result['title'], url, result['link'], result['thumbnail'], result['duration'], user, isFile=False, http_headers=result.get('http_headers'))
+        soundcloudSong = Song(result['title'], url, result['link'], result['thumbnail'], result['duration'], user, isFile=False, http_headers=result.get('http_headers'), source_command=source_command)
         # queue the song
         await self.queueSong(soundcloudSong)
         return
@@ -717,9 +758,15 @@ class MusicController:
         logging.debug("In handleSoundCloudPlaylist")
         # get the playlist info from the soundcloud link
         searcher = VideoSearcher()
-        result = await searcher.getPlaylistInfo(url)
+        try:
+            result = await searcher.getPlaylistInfo(url)
+        except Exception as e:
+            logging.error(f"[SoundCloud] Failed to extract SoundCloud playlist '{url}' [{self.current_context}]: {e}", exc_info=True)
+            await self.textChannel.send(f"Unable to find playlist: {e}")
+            return
         # check if result came back successfully
         if not result:
+            logging.error(f"[SoundCloud] No info returned for SoundCloud playlist '{url}' [{self.current_context}]")
             await self.textChannel.send(f"Unable to find playlist.")
             return
         # get the playlist name and the number of songs
@@ -734,17 +781,18 @@ class MusicController:
         embed.add_field(name="Playlist Name", value=metadata['playlist_name'], inline=False)
         embed.add_field(name="# of Songs", value=metadata['song_count'], inline=False)
         await self.textChannel.send(embed=embed)
+        source_command = self.current_context or f"SoundCloud Playlist '{url}' by {user.display_name}"
         for song in result:
             logging.debug(f"Searching for {song['url']}")
             try:
                 # grab the video info for each song in the playlist
                 songInfo = await searcher.getVideoInfoFromURL(song['url'])
             except Exception as e:
-                logging.error(e)
+                logging.error(f"[SoundCloud] Failed to extract track '{song['url']}' in SoundCloud playlist [{self.current_context}]: {e}", exc_info=True)
                 await self.textChannel.send(f"Unable to add song: {e}")
                 continue
             # create a song object and append it to the playlist
-            soundcloudSong = Song(songInfo['title'], song['url'], songInfo['link'], songInfo['thumbnail'], songInfo['duration'], user, isFile=False, http_headers=songInfo.get('http_headers'))
+            soundcloudSong = Song(songInfo['title'], song['url'], songInfo['link'], songInfo['thumbnail'], songInfo['duration'], user, isFile=False, http_headers=songInfo.get('http_headers'), source_command=source_command)
             # queue the song
             await self.queueSong(soundcloudSong)
         return
@@ -756,15 +804,17 @@ class MusicController:
         try:
             result = await searcher.getVideoInfoFromQuery(query)
         except Exception as e:
-            logging.error(e)
+            logging.error(f"[yt-dlp] Search failed for query '{query}' [{self.current_context}]: {e}", exc_info=True)
             await self.textChannel.send(f"Unable to add song: {e}")
             return
         # check if result came back successfully
         if not result:
+            logging.error(f"[yt-dlp] No video info found for search query '{query}' [{self.current_context}]")
             await self.textChannel.send(f"Unable to find song.")
             return
+        source_command = self.current_context or f"YouTube Search '{query}' by {user.display_name}"
         # create a song object
-        youtubeSong = Song(result['title'], result['url'], result['link'], result['thumbnail'], result['duration'], user, isFile=False, http_headers=result.get('http_headers'))
+        youtubeSong = Song(result['title'], result['url'], result['link'], result['thumbnail'], result['duration'], user, isFile=False, http_headers=result.get('http_headers'), source_command=source_command)
         # queue the song
         await self.queueSong(youtubeSong)
         return
@@ -837,25 +887,25 @@ class MusicController:
         if not song.isFile:
             expiration = getSongExpiration(song.link)
             now = int(time.time())
-            logging.info(f"[FFmpeg] Preparing to play: {song.title}")
+            logging.info(f"[FFmpeg] Preparing to play: {song.title} [Source: {song.source_command}]")
             logging.info(f"[FFmpeg] Stream URL expiration: {expiration}, current time: {now}, expires in: {expiration - now if expiration else 'N/A'}s")
             logging.debug(f"[FFmpeg] Stream URL: {song.link[:120]}...")
 
             if expiration and expiration <= now:
-                logging.warning(f"[FFmpeg] Stream URL is expired (by {now - expiration}s). Fetching new one")
+                logging.warning(f"[FFmpeg] Stream URL is expired (by {now - expiration}s). Fetching new one for '{song.title}' [Source: {song.source_command}]")
                 # get the song info from the link
                 searcher = VideoSearcher()
                 try:
                     result = await searcher.getVideoInfoFromURL(song.url)
                 except Exception as e:
-                    logging.error(f"[FFmpeg] Failed to refresh stream URL: {e}")
-                    await self.textChannel.send(f"Unable to add song: {e}")
+                    logging.error(f"[FFmpeg] Failed to refresh stream URL for '{song.title}' [Source: {song.source_command}]: {e}", exc_info=True)
+                    await self.textChannel.send(f"Unable to play song: {e}")
                     return
                 # update the current songs stream link
                 song.link = result['link']
                 song.http_headers = result.get('http_headers', {})
                 new_exp = getSongExpiration(song.link)
-                logging.info(f"[FFmpeg] New stream URL obtained, expires in: {new_exp - now if new_exp else 'N/A'}s")
+                logging.info(f"[FFmpeg] New stream URL obtained for '{song.title}', expires in: {new_exp - now if new_exp else 'N/A'}s")
 
         # Build FFmpeg headers from yt-dlp's http_headers to avoid YouTube blocking
         header_str = ''
@@ -870,14 +920,22 @@ class MusicController:
 
         # create the discord player for current song
         # Offload synchronous Popen calls to prevent blocking event loop
-        logging.info(f"[FFmpeg] Creating FFmpegOpusAudio player for: {song.title}")
-        player = await self.client.loop.run_in_executor(None, lambda: discord.FFmpegOpusAudio(song.link, **ffmpeg_options))
+        logging.info(f"[FFmpeg] Creating FFmpegOpusAudio player for: {song.title} [Source: {song.source_command}]")
+        try:
+            player = await self.client.loop.run_in_executor(None, lambda: discord.FFmpegOpusAudio(song.link, **ffmpeg_options))
+        except Exception as e:
+            logging.error(f"[FFmpeg] Failed to create FFmpegOpusAudio player for '{song.title}' [Source: {song.source_command}]: {e}", exc_info=True)
+            await self.textChannel.send(f"Error starting audio playback for **{song.title}**.")
+            if self.songQueue:
+                self.songQueue.pop(0)
+            fut = asyncio.run_coroutine_threadsafe(self.playSong(), self.client.loop)
+            return
 
         # function to call after a song is done playing
         def after_playing(error):
             if error:
                 error_str = str(error)
-                logging.error(f"[FFmpeg] Playback error for '{song.title}': {error_str}")
+                logging.error(f"[FFmpeg] Playback error for '{song.title}' [Source: {song.source_command}]: {error_str}", exc_info=True)
                 # Try to extract and interpret the exit code
                 import re as _re
                 code_match = _re.search(r'code (\d+)', error_str)
@@ -886,10 +944,10 @@ class MusicController:
                     # Interpret as signed 32-bit for Windows
                     if code > 0x7FFFFFFF:
                         signed = code - 0x100000000
-                        logging.error(f"[FFmpeg] Exit code {code} (signed: {signed}, hex: 0x{code:08X})")
+                        logging.error(f"[FFmpeg] Exit code {code} (signed: {signed}, hex: 0x{code:08X}) [Source: {song.source_command}]")
                     else:
-                        logging.error(f"[FFmpeg] Exit code {code} (hex: 0x{code:08X})")
-                logging.error(f"[FFmpeg] Song URL: {song.url}, isFile: {song.isFile}")
+                        logging.error(f"[FFmpeg] Exit code {code} (hex: 0x{code:08X}) [Source: {song.source_command}]")
+                logging.error(f"[FFmpeg] Song URL: {song.url}, isFile: {song.isFile}, Stream Link: {song.link[:100]}...")
             else:
                 if self.isLooping:
                     logging.debug("Song finished, replaying previous song.")
@@ -902,7 +960,7 @@ class MusicController:
 
         def after_tts(error):
             if error:
-                logging.error(f"Error during TTS playback: {error}")
+                logging.error(f"[TTS] Error during TTS playback for '{song.title}' [Source: {song.source_command}]: {error}", exc_info=True)
 
             if not self.isPlayingTTS: # if aborted
                 return
@@ -916,7 +974,7 @@ class MusicController:
             def play_actual_song():
                 if self.isConnectedToVC():
                     voice_client = discord.utils.get(self.client.voice_clients, guild=self.guild)
-                    if voice_client.is_connected():
+                    if voice_client and voice_client.is_connected():
                         voice_client.play(player, after=after_playing)
 
             self.client.loop.call_soon_threadsafe(play_actual_song)
@@ -934,7 +992,7 @@ class MusicController:
             self.isPlayingTTS = True
             voice_client.play(tts_player, after=after_tts)
         except Exception as e:
-            logging.error(f"Failed to play TTS: {e}")
+            logging.error(f"[TTS] Failed to play TTS for '{song.title}' [Source: {song.source_command}]: {e}", exc_info=True)
             # fallback to direct play
             self.start_time = int(time.time())
             self.pause_duration = 0

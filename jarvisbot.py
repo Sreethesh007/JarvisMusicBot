@@ -16,20 +16,21 @@ from embed_views.keywords_view import KeywordsView
 
 # set up logging
 import sys
+log_dir = Path(__file__).resolve().parent / 'logs'
+log_dir.mkdir(parents=True, exist_ok=True)
+log_file = log_dir / 'logs.txt'
+
 logging.basicConfig(
     level=logging.INFO,  # Set logging level
-    format='%(asctime)s - %(levelname)s - %(message)s',
+    format='%(asctime)s - [%(levelname)s] - %(message)s',
     handlers=[
-        logging.FileHandler(f"{Path(__file__).resolve().parent / 'bot_log.log'}", mode='w', encoding='utf-8'),
+        logging.FileHandler(log_file, mode='a', encoding='utf-8'),
         logging.StreamHandler(stream=sys.stdout)
     ]
 )
 # Force stream handler to use utf-8 if possible
 for handler in logging.root.handlers:
     if isinstance(handler, logging.StreamHandler) and not isinstance(handler, logging.FileHandler):
-        # We can't easily set encoding on an existing standard stream,
-        # but we can try to reconfigure it or just wrap it if needed.
-        # Actually in Python 3.7+ we can set sys.stdout.reconfigure(encoding='utf-8')
         try:
             sys.stdout.reconfigure(encoding='utf-8')
         except AttributeError:
@@ -766,7 +767,18 @@ async def help(interaction: discord.Interaction):
     embed.add_field(name="Available Voice Commands:", value="'Jarvis play', 'Jarvis skip', 'Jarvis next', 'Jarvis loop', 'Jarvis pause', 'Jarvis stop'", inline=False)
     embed.set_thumbnail(url=bot.user.avatar.url)
     await interaction.response.send_message(embed=embed)
-    
+
+@bot.tree.error
+async def on_app_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
+    cmd_name = interaction.command.name if interaction.command else "Unknown"
+    logging.error(f"Error executing slash command /{cmd_name} (User: {interaction.user.display_name}, ID: {interaction.user.id}): {error}", exc_info=True)
+    try:
+        if interaction.response.is_done():
+            await interaction.followup.send(f"An error occurred while executing /{cmd_name}.", ephemeral=True)
+        else:
+            await interaction.response.send_message(f"An error occurred while executing /{cmd_name}.", ephemeral=True)
+    except Exception:
+        pass
 
 if __name__ == "__main__":
     asyncio.run(bot.start_bot())

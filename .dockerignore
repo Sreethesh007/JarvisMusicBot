@@ -18,6 +18,7 @@ venv.bak/
 # Ignore logs and runtime files
 *.log
 bot_log.log
+logs/
 
 # Ignore editor files
 .vscode/

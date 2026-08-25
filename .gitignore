@@ -196,6 +196,7 @@ cython_debug/
 # Jarvis bot
 cookies.txt
 bot_log.log
+logs/
 README.md
 venv/
 __pycache__/

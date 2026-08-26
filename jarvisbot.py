@@ -621,6 +621,31 @@ async def skip(interaction: discord.Interaction):
     logging.debug(f"/skip from {interaction.user.name} has ended")
     return
 
+@bot.tree.command(name='previous', description='Plays or queues the previously played song.')
+async def previous(interaction: discord.Interaction):
+    logging.info(f"{interaction.user.name} has activated /previous")
+
+    # check if user is banned
+    bannedUsersClass = BannedUsers()
+    bannedUsers = await bannedUsersClass.loadBannedUserIDs()
+    if interaction.user.id in bannedUsers:
+        await interaction.response.send_message(f"User **{interaction.user.display_name}** is banned from the bot.")
+        return
+
+    # grab the music controller for designated guild
+    musicController = await bot.getGuildMusicController(guild= interaction.guild)
+    if not musicController.isConnectedToVC():
+        if not interaction.user.voice or not interaction.user.voice.channel:
+            await interaction.response.send_message("You or the Bot must be in a voice channel to use this command.")
+            return
+        else:
+            await musicController.two_four_seven(interaction.user.voice.channel, interaction.channel)
+
+    await interaction.response.send_message("Loading previous song...")
+    await musicController.playPrevious(interaction.user)
+    logging.debug(f"/previous from {interaction.user.name} has ended")
+    return
+
 @bot.tree.command(name='loop', description='Loops the currently playing song.')
 async def loop(interaction: discord.Interaction):
     logging.info(f"{interaction.user.name} has activated /loop")

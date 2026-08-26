@@ -57,6 +57,7 @@ class MusicController:
         self.bot_keywords_last_mtime = 0
         self.nlp_processor = NLPProcessor()
         self.current_context = None
+        self.previous_song = None
 
     async def _get_bot_keywords(self):
         botKeywordsClass = BotKeywords()
@@ -230,6 +231,30 @@ class MusicController:
             
 
     
+    # function to play previous song
+    async def playPrevious(self, user: discord.User):
+        logging.debug("Starting playPrevious function")
+        if not self.previous_song:
+            await self.textChannel.send("There is no previous song to play.")
+            return
+
+        source_command = self.current_context or f"Previous song requested by {user.display_name}"
+        prev = self.previous_song
+        song_to_queue = Song(
+            title=prev.title,
+            url=prev.url,
+            link=None if not prev.isFile else prev.link,
+            thumbnail=prev.thumbnail,
+            duration=prev.duration,
+            user=user,
+            isFile=prev.isFile,
+            http_headers=prev.http_headers if prev.isFile else {},
+            source_command=source_command,
+            is_lazy=not prev.isFile,
+            query=prev.query
+        )
+        await self.queueSong(song_to_queue)
+
     # function to pause current song
     async def pauseSong(self):
         logging.debug("Starting /pause function")   
@@ -509,6 +534,10 @@ class MusicController:
                         await self.textChannel.send(f"Voice Activated - Looping Enabled")
                     else:
                         await self.textChannel.send(f"Voice Activated - Looping Disabled")
+            elif intent == 'previous':
+                if self.isConnectedToVC():
+                    await self.textChannel.send(f"Voice Activated - Playing Previous Song")
+                    await self.playPrevious(user)
             elif intent == 'disconnect':
                 # Only VIP users (including OWNER) can disconnect via voice keyword
                 vipUsersClass = VIPUsers()
@@ -1036,13 +1065,17 @@ class MusicController:
                     else:
                         logging.error(f"[FFmpeg] Exit code {code} (hex: 0x{code:08X}) [Source: {song.source_command}]")
                 logging.error(f"[FFmpeg] Song URL: {song.url}, isFile: {song.isFile}, Stream Link: {song.link[:100]}...")
+                if not self.isLooping and self.songQueue:
+                    self.previous_song = self.songQueue.pop(0)
+                fut = asyncio.run_coroutine_threadsafe(self.playSong(), self.client.loop)
+                fut.add_done_callback(lambda f: f.exception())
             else:
                 if self.isLooping:
                     logging.debug("Song finished, replaying previous song.")
                 else:
                     logging.debug("Song finished, popping from queue and checking next")
                     if self.songQueue:
-                        self.songQueue.pop(0)
+                        self.previous_song = self.songQueue.pop(0)
                 fut = asyncio.run_coroutine_threadsafe(self.playSong(), self.client.loop)
                 fut.add_done_callback(lambda f: f.exception())
 

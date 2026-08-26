@@ -44,6 +44,7 @@ You are a music bot intent classifier.
 The user will provide a command in English or Hindi (or Hinglish).
 Your job is to classify the command into one of the following intents:
 - 'play' (to play a song, also extract the song name). IMPORTANT: Only classify as 'play' if the user explicitly asks to play something (e.g., using words like "play", "baja", "chala"). A sentence just saying a word or name (e.g. "Jarvis watermelon") with no intent to play must NOT be classified as 'play'.
+- 'previous' (to play or queue the previously played song/track, e.g., "play previous song", "pichla gana", "last song")
 - 'pause' (to pause the music)
 - 'resume' (to resume paused music)
 - 'skip' (to skip to the next song)
@@ -71,7 +72,7 @@ User command: "{text}"
             intent = result.get('intent', 'unknown').lower()
             query = result.get('query', '')
 
-            valid_intents = ['play', 'pause', 'resume', 'skip', 'stop', 'loop', 'disconnect']
+            valid_intents = ['play', 'previous', 'pause', 'resume', 'skip', 'stop', 'loop', 'disconnect']
             if intent not in valid_intents:
                 intent = 'unknown'
 
@@ -84,6 +85,7 @@ User command: "{text}"
 
         # Regex and word matching
         # English and Hindi keywords
+        previous_pattern = re.compile(r'\b(previous|prev|pichla|pichhla|purana gana|last song|previous song|replay last)\b', re.IGNORECASE)
         play_pattern = re.compile(r'\b(play|baja|chala|lagao|start)\b', re.IGNORECASE)
         pause_pattern = re.compile(r'\b(pause|rok de|rok do|ruko|wait)\b', re.IGNORECASE)
         resume_pattern = re.compile(r'\b(resume|continue|phir se|wapas|chalu kar)\b', re.IGNORECASE)
@@ -92,7 +94,10 @@ User command: "{text}"
         loop_pattern = re.compile(r'\b(loop|repeat|baar baar|phir se baja)\b', re.IGNORECASE)
         disconnect_pattern = re.compile(r'\b(disconnect|leave|nikal|jawa|jao|chale jao)\b', re.IGNORECASE)
 
-        # Check intent
+        # Check intent (check 'previous' before 'play' so 'play previous song' isn't treated as a query)
+        if previous_pattern.search(text):
+            return 'previous', ""
+
         if play_pattern.search(text):
             # Extract query: remove the keyword and everything before it, or just replace the keyword
             query = play_pattern.sub('', text).strip()

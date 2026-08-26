@@ -73,8 +73,10 @@ class VideoSearcher():
             }
             with YoutubeDL(yt_dlp_options) as ytdlp:
                 info = ytdlp.extract_info(video_url, download=False)
+                raw_title = info.get('title') or 'Unknown Track'
+                clean_title = re.sub(r'[^\w\s\-]', '', raw_title).strip() or 'Unknown Track'
                 return {
-                    'title': re.sub(r'[^\w\s\-]', '', info.get('title', '')),
+                    'title': clean_title,
                     'duration': int(info.get('duration') or 0),  # in seconds
                     'thumbnail': info.get('thumbnail'),
                     'link': info.get('url'),
@@ -102,8 +104,10 @@ class VideoSearcher():
             with YoutubeDL(yt_dlp_options) as ytdlp:
                 info = ytdlp.extract_info(f"{video_query} lyrics", download=False)
                 video = info['entries'][0] if 'entries' in info else info
+                raw_title = video.get('title') or 'Unknown Track'
+                clean_title = re.sub(r'[^\w\s\-]', '', raw_title).strip() or 'Unknown Track'
                 return {
-                    'title': re.sub(r'[^\w\s\-]', '', video.get('title', '')),
+                    'title': clean_title,
                     'duration': int(video.get('duration') or 0),
                     'thumbnail': video.get('thumbnail'),
                     'link': video.get('url'),
@@ -136,10 +140,10 @@ class VideoSearcher():
 
                 return [
                     {
-                        'title': re.sub(r'[^\w\s\-]', '', entry.get('title', '')),
+                        'title': re.sub(r'[^\w\s\-]', '', entry.get('title') or '').strip() or 'Unknown Track',
                         'link': entry.get('url'),
                     }
-                    for entry in entries
+                    for entry in entries if entry
                 ]
 
         return await loop.run_in_executor(None, extract_info)
@@ -160,13 +164,39 @@ class VideoSearcher():
             }
             with YoutubeDL(yt_dlp_options) as ytdlp:
                 playlist = ytdlp.extract_info(playlist_url, download=False)
+                entries = playlist.get('entries', []) or []
+                raw_playlist_name = playlist.get('title') or 'Unknown Playlist'
+                clean_playlist_name = re.sub(r'[^\w\s\-]', '', raw_playlist_name).strip() or 'Unknown Playlist'
                 metadata = {
-                    'playlist_name': re.sub(r'[^\w\s\-]', '', playlist.get('title', 'Unknown Playlist')),
-                    'song_count': len(playlist.get('entries', [])),
-                    'thumbnail': playlist.get('thumbnail') or (playlist.get('thumbnails', [{}])[0].get('url') if 'thumbnails' in playlist else None)
+                    'playlist_name': clean_playlist_name,
+                    'song_count': len(entries),
+                    'thumbnail': playlist.get('thumbnail') or (playlist.get('thumbnails', [{}])[0].get('url') if playlist.get('thumbnails') else None)
                 }
-                song_urls = [{'url': entry.get('url')} for entry in playlist.get('entries', []) if entry.get('url')]
-                return [metadata] + song_urls
+
+                song_entries = []
+                for entry in entries:
+                    if not entry:
+                        continue
+                    url = entry.get('url') or entry.get('webpage_url')
+                    if url and not url.startswith('http'):
+                        url = f"https://www.youtube.com/watch?v={url}"
+                    elif not url and entry.get('id'):
+                        url = f"https://www.youtube.com/watch?v={entry.get('id')}"
+                    
+                    if not url:
+                        continue
+
+                    raw_title = entry.get('title') or 'Unknown Track'
+                    clean_title = re.sub(r'[^\w\s\-]', '', raw_title).strip() or 'Unknown Track'
+                    thumb = entry.get('thumbnail') or (entry.get('thumbnails', [{}])[0].get('url') if entry.get('thumbnails') else None)
+                    song_entries.append({
+                        'title': clean_title,
+                        'url': url,
+                        'duration': int(entry.get('duration') or 0),
+                        'thumbnail': thumb or metadata['thumbnail']
+                    })
+
+                return [metadata] + song_entries
 
         return await loop.run_in_executor(None, extract_info)
     
@@ -188,7 +218,7 @@ class VideoSearcher():
             with YoutubeDL(yt_dlp_options) as ytdlp:
                 playlist = ytdlp.extract_info(playlist_url, download=False)
                 return [{
-                    'title': re.sub(r'[^\w\s\-]', '', entry.get('title', '')),
+                    'title': re.sub(r'[^\w\s\-]', '', entry.get('title') or '').strip() or 'Unknown Track',
                     'duration': int(entry.get('duration') or 0),
                     'thumbnail': entry.get('thumbnail'),
                     'link': entry.get('url'),

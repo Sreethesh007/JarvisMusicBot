@@ -22,7 +22,7 @@ from management.nlp_processor import NLPProcessor
             
 
 class Song:
-    def __init__(self, title: str, url: str, link: str, thumbnail: str, duration: int, user: discord.User, isFile: bool, http_headers: dict = None, source_command: str = None):
+    def __init__(self, title: str, url: str = None, link: str = None, thumbnail: str = None, duration: int = 0, user: discord.User = None, isFile: bool = False, http_headers: dict = None, source_command: str = None, is_lazy: bool = False, query: str = None):
         self.title = title
         self.url = url
         self.link = link
@@ -32,6 +32,8 @@ class Song:
         self.isFile = isFile
         self.http_headers = http_headers or {}
         self.source_command = source_command or f"Requested by {user.display_name if user else 'Unknown'}"
+        self.is_lazy = is_lazy
+        self.query = query
 
 class MusicController:
     # Constructor
@@ -629,32 +631,42 @@ class MusicController:
             logging.error(f"[yt-dlp] No playlist info returned for YouTube playlist '{url}' [{self.current_context}]")
             await self.textChannel.send(f"Unable to find playlist.")
             return
-        # get the playlist name and the number of songs
+        # get the playlist metadata
         metadata = result.pop(0)
+        playlist_name = metadata.get('playlist_name', 'YouTube Playlist')
         thumbnail = metadata.get('thumbnail') or self.client.user.avatar.url
-        # send the "Adding Playlist" discord embed
+        source_command = self.current_context or f"YouTube Playlist '{url}' by {user.display_name}"
+
+        was_idle = (len(self.songQueue) == 0)
+
+        # Batch append all lazy songs instantly
+        for entry in result:
+            lazy_song = Song(
+                title=entry['title'],
+                url=entry['url'],
+                link=None,
+                thumbnail=entry.get('thumbnail') or thumbnail,
+                duration=entry.get('duration', 0),
+                user=user,
+                isFile=False,
+                http_headers=None,
+                source_command=source_command,
+                is_lazy=True
+            )
+            self.songQueue.append(lazy_song)
+
+        # send single summary embed
         embed = discord.Embed(
-            title="Adding Playlist:",
+            title="Added Playlist to Queue:",
             color=0xa600ff,
             )
         embed.set_thumbnail(url=thumbnail)
-        embed.add_field(name="Playlist Name", value=metadata['playlist_name'], inline=False)
-        embed.add_field(name="# of Songs", value=metadata['song_count'], inline=False)
+        embed.add_field(name="Playlist Name", value=playlist_name, inline=False)
+        embed.add_field(name="# of Songs", value=f"{len(result)} tracks", inline=False)
         await self.textChannel.send(embed=embed)
-        source_command = self.current_context or f"YouTube Playlist '{url}' by {user.display_name}"
-        for song in result:
-            logging.debug(f"Searching for {song['url']}")
-            try:
-                # grab the video info for each song in the playlist
-                songInfo = await searcher.getVideoInfoFromURL(song['url'])
-            except Exception as e:
-                logging.error(f"[yt-dlp] Error extracting track '{song['url']}' in playlist '{url}' [{self.current_context}]: {e}", exc_info=True)
-                await self.textChannel.send(f"Unable to add song: {e}")
-                continue
-            # create a song object and append it to the playlist
-            youtubeSong = Song(songInfo['title'], song['url'], songInfo['link'], songInfo['thumbnail'], songInfo['duration'], user, isFile=False, http_headers=songInfo.get('http_headers'), source_command=source_command)
-            # queue the song
-            await self.queueSong(youtubeSong)
+
+        if was_idle and self.songQueue:
+            await self.playSong()
         return
 
     async def handleSpotifyLink(self, user, url):
@@ -704,32 +716,42 @@ class MusicController:
             return
         # get the playlist name, number of songs, and thumbnail
         playlist_info = result.pop(0)
+        playlist_name = playlist_info.get('title', 'Spotify Playlist')
         thumbnail = playlist_info.get('thumbnail') or self.client.user.avatar.url
-        # send the "Adding Playlist" discord embed
+        source_command = self.current_context or f"Spotify Playlist '{playlist}' by {user.display_name}"
+
+        was_idle = (len(self.songQueue) == 0)
+
+        # Batch append all lazy songs instantly
+        for song in result:
+            query = f"{song['title']} by {song['artist']}"
+            lazy_song = Song(
+                title=f"{song['title']} - {song['artist']}",
+                url=None,
+                link=None,
+                thumbnail=thumbnail,
+                duration=0,
+                user=user,
+                isFile=False,
+                http_headers=None,
+                source_command=source_command,
+                is_lazy=True,
+                query=query
+            )
+            self.songQueue.append(lazy_song)
+
+        # send single summary embed
         embed = discord.Embed(
-            title="Adding Playlist:",
+            title="Added Playlist to Queue:",
             color=0xa600ff,
             )
         embed.set_thumbnail(url=thumbnail)
-        embed.add_field(name="Playlist Name", value=playlist_info['title'], inline=False)
-        embed.add_field(name="# of Songs", value=len(result), inline=False)
+        embed.add_field(name="Playlist Name", value=playlist_name, inline=False)
+        embed.add_field(name="# of Songs", value=f"{len(result)} tracks", inline=False)
         await self.textChannel.send(embed=embed)
-        searcher = VideoSearcher()
-        source_command = self.current_context or f"Spotify Playlist '{playlist}' by {user.display_name}"
-        for song in result:
-            query = f"{song['title']} by {song['artist']}"
-            logging.debug(f"Searching for {query}")
-            try:
-                # grab the video info for each song in the playlist
-                songInfo = await searcher.getVideoInfoFromQuery(query)
-            except Exception as e:
-                logging.error(f"[yt-dlp] Failed to search YouTube for track '{query}' in Spotify playlist [{self.current_context}]: {e}", exc_info=True)
-                await self.textChannel.send(f"Unable to add song: {e}")
-                continue
-            # create a song object
-            youtubeSong = Song(songInfo['title'], songInfo['url'], songInfo['link'], songInfo['thumbnail'], songInfo['duration'], user, isFile=False, http_headers=songInfo.get('http_headers'), source_command=source_command)
-            # queue the song
-            await self.queueSong(youtubeSong)
+
+        if was_idle and self.songQueue:
+            await self.playSong()
         return
 
     async def handleSoundCloudLink(self, user, url):
@@ -771,30 +793,40 @@ class MusicController:
             return
         # get the playlist name and the number of songs
         metadata = result.pop(0)
+        playlist_name = metadata.get('playlist_name', 'SoundCloud Playlist')
         thumbnail = metadata.get('thumbnail') or self.client.user.avatar.url
-        # send the "Adding Playlist" discord embed
+        source_command = self.current_context or f"SoundCloud Playlist '{url}' by {user.display_name}"
+
+        was_idle = (len(self.songQueue) == 0)
+
+        # Batch append all lazy songs instantly
+        for entry in result:
+            lazy_song = Song(
+                title=entry['title'],
+                url=entry['url'],
+                link=None,
+                thumbnail=entry.get('thumbnail') or thumbnail,
+                duration=entry.get('duration', 0),
+                user=user,
+                isFile=False,
+                http_headers=None,
+                source_command=source_command,
+                is_lazy=True
+            )
+            self.songQueue.append(lazy_song)
+
+        # send single summary embed
         embed = discord.Embed(
-            title="Adding Playlist:",
+            title="Added Playlist to Queue:",
             color=0xa600ff,
             )
         embed.set_thumbnail(url=thumbnail)
-        embed.add_field(name="Playlist Name", value=metadata['playlist_name'], inline=False)
-        embed.add_field(name="# of Songs", value=metadata['song_count'], inline=False)
+        embed.add_field(name="Playlist Name", value=playlist_name, inline=False)
+        embed.add_field(name="# of Songs", value=f"{len(result)} tracks", inline=False)
         await self.textChannel.send(embed=embed)
-        source_command = self.current_context or f"SoundCloud Playlist '{url}' by {user.display_name}"
-        for song in result:
-            logging.debug(f"Searching for {song['url']}")
-            try:
-                # grab the video info for each song in the playlist
-                songInfo = await searcher.getVideoInfoFromURL(song['url'])
-            except Exception as e:
-                logging.error(f"[SoundCloud] Failed to extract track '{song['url']}' in SoundCloud playlist [{self.current_context}]: {e}", exc_info=True)
-                await self.textChannel.send(f"Unable to add song: {e}")
-                continue
-            # create a song object and append it to the playlist
-            soundcloudSong = Song(songInfo['title'], song['url'], songInfo['link'], songInfo['thumbnail'], songInfo['duration'], user, isFile=False, http_headers=songInfo.get('http_headers'), source_command=source_command)
-            # queue the song
-            await self.queueSong(soundcloudSong)
+
+        if was_idle and self.songQueue:
+            await self.playSong()
         return
 
     async def handleYoutubeSearch(self, user, query):
@@ -844,32 +876,54 @@ class MusicController:
         
     async def queuePlaylist(self, playlist: list):
         logging.debug("In queuePlaylist")
-        # pop the thumbnail from the playlist
-        thumbnail = playlist.pop(0)
-        # check if playlist should play right away or go into the queue
-        if not self.songQueue:
-            logging.debug("Queue is empty, playing playlist right away.")
-            for song in playlist:
-                self.songQueue.append(song)
-            print("songQueue: ", self.songQueue)
-            await self.playSong()
-        else:
-            logging.debug("Adding playlist to queue.")
-            for song in playlist:
-                self.songQueue.append(song)
-            print("songQueue: ", self.songQueue)
+        if not playlist:
+            return
+        thumbnail = playlist.pop(0) if isinstance(playlist[0], str) else (self.client.user.avatar.url if self.client.user else None)
+        was_idle = (len(self.songQueue) == 0)
+        for song in playlist:
+            self.songQueue.append(song)
 
-        # send the "Added to Queue" discord embed
+        # send single summary embed
         embed = discord.Embed(
             title="Playlist Added to Queue:",
             color=0xa600ff,
             )
-        embed.set_thumbnail(url=thumbnail)
-        for i, song in enumerate(playlist, start=1):
-            embed.add_field(name=f"{i}", value=song.title, inline=False)
+        if thumbnail:
+            embed.set_thumbnail(url=thumbnail)
+        embed.add_field(name="# of Songs", value=f"{len(playlist)} tracks", inline=False)
         await self.textChannel.send(embed=embed)
+
+        if was_idle and self.songQueue:
+            await self.playSong()
         return
         
+    async def _prefetch_next_song(self):
+        """Asynchronously pre-resolves stream URL for the next track in queue to make track transition instant."""
+        if len(self.songQueue) > 1:
+            next_song = self.songQueue[1]
+            if next_song.is_lazy or (not next_song.isFile and not next_song.link):
+                try:
+                    logging.debug(f"[JIT Pre-fetch] Pre-fetching stream URL for: {next_song.title}")
+                    searcher = VideoSearcher()
+                    if next_song.url:
+                        result = await searcher.getVideoInfoFromURL(next_song.url)
+                    elif next_song.query:
+                        result = await searcher.getVideoInfoFromQuery(next_song.query)
+                    else:
+                        return
+
+                    if result and result.get('link'):
+                        next_song.title = result.get('title') or next_song.title
+                        next_song.link = result['link']
+                        next_song.url = result.get('url') or next_song.url
+                        next_song.thumbnail = result.get('thumbnail') or next_song.thumbnail
+                        next_song.duration = result.get('duration') or next_song.duration
+                        next_song.http_headers = result.get('http_headers', {})
+                        next_song.is_lazy = False
+                        logging.debug(f"[JIT Pre-fetch] Successfully pre-fetched: {next_song.title}")
+                except Exception as e:
+                    logging.debug(f"[JIT Pre-fetch] Pre-fetch skipped for '{next_song.title}': {e}")
+
     async def playSong(self):
         logging.debug("In playSong.")
 
@@ -883,6 +937,37 @@ class MusicController:
 
         # get the next song to play
         song = self.songQueue[0]
+
+        # Resolve lazy song just-in-time
+        if song.is_lazy or (not song.isFile and not song.link):
+            logging.info(f"[JIT] Resolving stream for lazy song: {song.title} [Source: {song.source_command}]")
+            searcher = VideoSearcher()
+            try:
+                if song.url:
+                    result = await searcher.getVideoInfoFromURL(song.url)
+                elif song.query:
+                    result = await searcher.getVideoInfoFromQuery(song.query)
+                else:
+                    raise ValueError(f"Song '{song.title}' has neither URL nor search query to resolve.")
+
+                if not result or not result.get('link'):
+                    raise ValueError(f"No audio stream link found for '{song.title}'.")
+
+                song.title = result.get('title') or song.title
+                song.link = result['link']
+                song.url = result.get('url') or song.url
+                song.thumbnail = result.get('thumbnail') or song.thumbnail
+                song.duration = result.get('duration') or song.duration
+                song.http_headers = result.get('http_headers', {})
+                song.is_lazy = False
+                logging.info(f"[JIT] Successfully resolved stream for: {song.title}")
+            except Exception as e:
+                logging.error(f"[JIT] Failed to resolve lazy song '{song.title}' [{song.source_command}]: {e}", exc_info=True)
+                await self.textChannel.send(f"⚠️ Unable to load track **{song.title}**, skipping to next...")
+                if self.songQueue:
+                    self.songQueue.pop(0)
+                fut = asyncio.run_coroutine_threadsafe(self.playSong(), self.client.loop)
+                return
 
         if not song.isFile:
             expiration = getSongExpiration(song.link)
@@ -930,6 +1015,9 @@ class MusicController:
                 self.songQueue.pop(0)
             fut = asyncio.run_coroutine_threadsafe(self.playSong(), self.client.loop)
             return
+
+        # Start prefetching next song in queue in background
+        self.client.loop.create_task(self._prefetch_next_song())
 
         # function to call after a song is done playing
         def after_playing(error):
